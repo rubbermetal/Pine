@@ -1,0 +1,31 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=5
+strategy("EMA Crossover")
+import TradingView/Strategy/3
+
+ema_f_len = input(10)
+ema_s_len = input(20)
+ema_src = input(close)
+
+tp = close + (close * .03)
+sl = close - (close * .01)
+
+ema_f = ta.ema(ema_src, ema_f_len)
+ema_s = ta.ema(ema_src, ema_s_len)
+
+confirmation = close //ta.ema(ema_src, 1)
+fill_clr = ema_f > ema_s ? color.rgb(81, 255, 69, 50) : color.rgb(252, 72, 72, 50)
+
+fast = plot(ema_f)
+slow = plot(ema_s)
+
+fill(fast, slow, fill_clr)
+
+plot(confirmation, trackprice = true)
+
+//if ta.crossover(ema_f, ema_s)
+//    strategy.entry("enter long", strategy.long, 0.034, tp, sl) 
+//if ta.crossunder(ema_f, ema_s)
+//    strategy.entry("enter short", strategy.short, 0.034, tp, sl)

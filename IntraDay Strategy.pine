@@ -1,0 +1,37 @@
+//@version=4
+strategy("Intraday Trading Strategy", overlay=true)
+
+// Define inputs
+fast_length = input(3, title="MACD Fast Length", type=input.integer)
+slow_length = input(10, title="MACD Slow Length", type=input.integer)
+macd_smooth = input(16, title="MACD Smoothing", type=input.integer)
+ema50_high_length = input(50, title="EMA 50 High Length", type=input.integer)
+ema50_low_length = input(50, title="EMA 50 Low Length", type=input.integer)
+ema15_close_length = input(15, title="EMA 15 Close Length", type=input.integer)
+
+// Calculate EMAs and MACD
+ema50_high = ema(high, ema50_high_length)
+ema50_low = ema(low, ema50_low_length)
+ema15_close = ema(close, ema15_close_length)
+sma_fast = sma(close, fast_length)
+sma_slow = sma(close, slow_length)
+macd_line = sma_fast - sma_slow
+signal_line = sma(macd_line, macd_smooth)
+
+// Buy and sell conditions
+long_condition = crossover(macd_line, signal_line) and close > ema15_close and close > ema50_low and ema15_close > ema50_low
+short_condition = crossunder(macd_line, signal_line) and close < ema15_close and close < ema50_high and ema15_close < ema50_high
+
+// Execute trades
+if (long_condition)
+    strategy.entry("Buy", strategy.long)
+if (short_condition)
+    strategy.entry("Sell", strategy.short)
+
+// Plot EMAs and MACD
+plot(ema50_high, color=color.red, title="EMA 50 High")
+plot(ema50_low, color=color.green, title="EMA 50 Low")
+plot(ema15_close, color=color.blue, title="EMA 15 Close")
+plot(macd_line, color=color.orange, title="MACD Line")
+plot(signal_line, color=color.gray, title="MACD Signal Line")
+

@@ -1,0 +1,44 @@
+//@version=5
+strategy("Scalping Strategy with Bollinger Bands, CCI, and ROC", overlay=true, shorttitle="Scalping BB CCI ROC", pyramiding=1)
+
+// Define inputs
+bb_length = input(title="Bollinger Bands Length", defval=20)
+bb_std = input(title="Bollinger Bands Standard Deviations", defval=2)
+cci_length = input(title="CCI Length", defval=14)
+cci_level = input(title="CCI Overbought/Oversold Threshold", defval=100)
+roc_length = input(title="ROC Length", defval=9)
+roc_level = input(title="ROC Threshold", defval=1)
+
+// Calculate Bollinger Bands
+ma = ta.sma(close, bb_length)
+bb_width = ta.stdev(close, bb_length) * bb_std
+bb_upper = ma + bb_width
+bb_lower = ma - bb_width
+
+// Calculate other indicators
+cci = ta.cci(close, cci_length)
+roc = ta.roc(close, roc_length)
+
+// Generate signals
+long_signal = close < bb_lower and cci < -cci_level and roc < -roc_level
+short_signal = close > bb_upper and cci > cci_level and roc > roc_level
+
+// Execute trades
+if long_signal
+    strategy.entry("Long", strategy.long)
+if short_signal
+    strategy.entry("Short", strategy.short)
+
+// Plot indicators
+plot(bb_upper, color=color.red, linewidth=1, title="Bollinger Bands Upper")
+plot(ma, color=color.blue, linewidth=1, title="Bollinger Bands Middle")
+plot(bb_lower, color=color.red, linewidth=1, title="Bollinger Bands Lower")
+hline(cci_level, "CCI Overbought", color=color.red)
+hline(-cci_level, "CCI Oversold", color=color.green)
+plot(cci, color=color.blue, linewidth=1, title="CCI")
+hline(roc_level, "ROC Level", color=color.red)
+hline(-roc_level, "ROC Level", color=color.green)
+plot(roc, color=color.purple, linewidth=1, title="ROC")
+
+bgcolor(long_signal ? color.new(color.green, 90) : na)
+bgcolor(short_signal ? color.new(color.red, 90) : na)

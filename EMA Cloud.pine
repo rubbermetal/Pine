@@ -1,0 +1,76 @@
+//@version=5
+indicator("EMA Cloud", shorttitle="EMA_C", overlay=true)
+
+// *****************************************************************************
+// EMA Ribbon
+i_show_group = "Choose what to show"
+i_showRibbon = input.bool(title='Show The EMA Ribbon', defval=false, group=i_show_group)
+
+fillThis(m1, m2, upclr, downclr) =>
+    CrossUp = m1 > m2
+    CrossUnder = m1 < m2
+    fillClr = CrossUp ? upclr : CrossUnder ? downclr : na
+    fillClr
+
+// lengths
+A = ta.ema(close, 5)
+B = ta.ema(close, 10)
+C = ta.ema(close, 15)
+D = ta.ema(close, 20)
+E = ta.ema(close, 25)
+F = ta.ema(close, 30)
+G = ta.ema(close, 35)
+H = ta.ema(close, 40)
+I = ta.ema(close, 45)
+J = ta.ema(close, 50)
+K = ta.ema(close, 55)
+L = ta.ema(close, 60)
+M = ta.ema(close, 65)
+N = ta.ema(close, 70)
+O = ta.ema(close, 75)
+P = ta.ema(close, 80)
+Q = ta.ema(close, 100)
+R = ta.ema(close, 200)
+
+// Calculate and plot the Ribbon
+EMA1 = plot(i_showRibbon ? A : na, 'EMA1', color=color.rgb(236, 255, 69, 100), linewidth=1)
+EMA2 = plot(i_showRibbon ? B : na, 'EMA2', color=color.rgb(76, 22, 97, 100), linewidth=1)
+EMA3 = plot(i_showRibbon ? C : na, 'EMA3', color=color.rgb(116, 32, 150, 100), linewidth=1)
+EMA4 = plot(i_showRibbon ? D : na, 'EMA4', color=color.rgb(133, 26, 133, 100), linewidth=1)
+EMA5 = plot(i_showRibbon ? E : na, 'EMA5', color=color.rgb(250, 41, 250, 100), linewidth=1)
+EMA6 = plot(i_showRibbon ? F : na, 'EMA6', color=color.rgb(241, 53, 241, 100), linewidth=1)
+EMA7 = plot(i_showRibbon ? G : na, 'EMA7', color=color.rgb(255, 77, 255, 100), linewidth=1)
+EMA8 = plot(i_showRibbon ? H : na, 'EMA8', color=color.rgb(243, 93, 243, 100), linewidth=1)
+EMA9 = plot(i_showRibbon ? I : na, 'EMA9', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA10 = plot(i_showRibbon ? J : na, 'EMA10', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA11 = plot(i_showRibbon ? K : na, 'EMA11', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA12 = plot(i_showRibbon ? L : na, 'EMA12', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA13 = plot(i_showRibbon ? M : na, 'EMA13', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA14 = plot(i_showRibbon ? N : na, 'EMA14', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA15 = plot(i_showRibbon ? O : na, 'EMA15', color=color.rgb(242, 42, 242, 100), linewidth=1)
+EMA16 = plot(i_showRibbon ? P : na, 'EMA16', color=color.rgb(255, 70, 70, 100), linewidth=1)
+EMA17 = plot(i_showRibbon ? Q : na, 'EMA17', color=color.rgb(255, 70, 70, 100), linewidth=1)
+EMA18 = plot(i_showRibbon ? R : na, 'EMA18', color=color.rgb(255, 70, 70, 100), linewidth=1)
+
+upFill = color.rgb(70, 255, 79, 75)
+downFill = color.rgb(255, 66, 66, 75)
+
+fill(EMA1, EMA2, color=fillThis(A, B, upFill, downFill)) 
+fill(EMA2, EMA3, color=fillThis(A, C, upFill, downFill))
+fill(EMA3, EMA4, color=fillThis(A, D, upFill, downFill))
+fill(EMA4, EMA5, color=fillThis(A, E, upFill, downFill))
+fill(EMA5, EMA6, color=fillThis(A, F, upFill, downFill))
+fill(EMA6, EMA7, color=fillThis(A, G, upFill, downFill))
+fill(EMA7, EMA8, color=fillThis(A, H, upFill, downFill))
+fill(EMA8, EMA9, color=fillThis(A, I, upFill, downFill))
+fill(EMA9, EMA10, color=fillThis(A, J, upFill, downFill))
+fill(EMA10, EMA11, color=fillThis(A, K, upFill, downFill))
+fill(EMA11, EMA12, color=fillThis(A, L, upFill, downFill))
+fill(EMA12, EMA13, color=fillThis(A, M, upFill, downFill))
+fill(EMA13, EMA14, color=fillThis(A, N, upFill, downFill))
+fill(EMA14, EMA15, color=fillThis(A, O, upFill, downFill))
+fill(EMA15, EMA16, color=fillThis(A, P, upFill, downFill)) 
+fill(EMA16, EMA17, color=fillThis(A, Q, upFill, downFill)) 
+fill(EMA17, EMA18, color=fillThis(A, R, upFill, downFill)) 
+
+plot(ta.rma(ohlc4, 120), color = color.rgb(255, 255, 255, 0))

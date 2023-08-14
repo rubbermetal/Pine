@@ -1,0 +1,21 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=5
+indicator("Dynamic Support Line", overlay = true)
+import TradingView/ta/5
+
+sma_top = ta.sma(ohlc4, 5)
+ema_top = ta.ema(ohlc4, 5)
+rma_top = ta.rma(ohlc4, 5)
+hma_top = ta.hma(ohlc4, 5)
+tema_top = ta.tema(ohlc4, 5)
+swma_top = ta.swma(ohlc4)
+
+ma_mid = ta.sma(((ema_top + sma_top + rma_top + hma_top + tema_top + swma_top) / 6), 5)
+ma_top = ta.sma((ma_mid + (ta.stdev(ohlc4, 14)) * 1.786), 1)
+ma_bottom = ta.sma((ma_mid - (ta.stdev(ohlc4, 14)) * 1.786), 1)
+
+plot(ma_top, color = color.rgb(25, 0, 253))
+plot(ma_mid, color = color.rgb(5, 3, 11))
+plot(ma_bottom, color = color.rgb(25, 0, 253))

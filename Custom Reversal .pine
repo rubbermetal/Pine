@@ -1,0 +1,48 @@
+//@version=4
+study("Support and Resistance Levels with Bands", overlay=true)
+
+// Find support and resistance levels
+last_high = security(syminfo.tickerid, "D", highest(high, 200))
+last_low = security(syminfo.tickerid, "D", lowest(low, 200))
+current_support = security(syminfo.tickerid, "60", lowest(low, 200))
+
+emaLength = input(10, "EMA Length", minval=1)
+
+// Calculate the smoothing factor
+alpha = 2 / (emaLength + 1)
+
+// Define the variable to store the zero lag EMA
+var float emaZeroLag = na
+ 
+// Calculate the zero lag EMA
+emaZeroLag := alpha * (close - security(syminfo.tickerid, timeframe.period, ema(close, emaLength))) + security(syminfo.tickerid, timeframe.period, ema(close, emaLength))
+
+// Determine if the support is broken
+support_broken = crossover(low, current_support)
+
+// Reset the support level when it's broken
+var float support_level = na
+if support_broken
+    support_level := current_support
+else
+    support_level := nz(support_level[1], current_support)
+
+// Calculate 0.5% higher and lower resistance and support levels
+resistance_high = last_high * 1.005
+resistance_low = last_high * 0.995
+support_high = last_low * 1.005
+support_low = last_low * 0.995
+
+// Only plot unbroken support and resistance levels
+plot(last_high >= high ? resistance_high : na, title="Resistance High", color=bar_index % 2 == 0 ? color.red : #00000000, linewidth=2)
+plot(last_high >= high ? resistance_low : na, title="Resistance Low", color=bar_index % 2 == 0 ? color.red : #00000000, linewidth=2)
+plot(last_low <= low ? support_high : na, title="Support High", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
+plot(last_low <= low ? support_low : na, title="Support Low", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
+plot(support_level <= low ? current_support : na, title="Key Support Level", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
+// Plot the zero lag EMA
+plot(emaZeroLag, color=color.green, linewidth=2, title="Zero Lag EMA")
+// Fill the area between resistance lines
+fill(plot(last_high >= high ? resistance_high : na, title="Resistance Fill High", color=#00000000), plot(last_high >= high ? resistance_low : na, title="Resistance Fill Low", color=#00000000), color.red, transp=70)
+
+// Fill the area between support lines
+fill(plot(last_low <= low ? support_high : na, title="Support Fill High", color=#00000000), plot(last_low <= low ? support_low : na, title="Support Fill Low", color=#00000000), color.green, transp=70)

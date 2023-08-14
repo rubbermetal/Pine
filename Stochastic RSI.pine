@@ -1,0 +1,64 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+//@version=5
+indicator("Stochastic RSI", format=format.percent, overlay = false)
+
+// ************************************************************************************
+// function smma 
+// formula (smma[1] * (length - 1) + src) / length
+// returns smma
+// ************************************************************************************
+smma(src, length) =>
+    sma = ta.sma(src, length)
+    smma = 0.0
+    smma := na(smma[1]) ? sma : (smma[1] * (length - 1) + src) / length
+    smma
+
+var RSI_group =          '============= RSI and Stochastic Settings =============='
+int rsiob = input.int(title = 'RSI High Level', defval = 80, minval = 1, group = RSI_group)
+int rsios = input.int(title = 'RSI Low Level', defval = 20, minval = 1, group = RSI_group)
+int periodK = input.int(title = 'Stochastic %K Length', defval = 14, minval = 1, group = RSI_group)
+int smoothD = input.int(title = 'Stochastic %D Smoothing', defval = 3, minval = 1, group = RSI_group)
+int smoothK = input.int(title = 'Stochastic %K Smoothing', defval = 3, minval = 1, group = RSI_group)
+
+var colors = array.new_color()
+if barstate.isfirst  
+    // Generate the green to red gradient
+    for i = 0 to 30
+        redValue = int(255 * i / 70)
+        greenValue = 255 - redValue
+        blueValue = 0
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+    // Generate the red to yellow gradient
+    for i = 31 to 70
+        redValue = 255
+        greenValue = int(255 - 255 * (i - 30) / 70)
+        blueValue = 0
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+    // Generate the brighter yellow gradient
+    for i = 71 to 100
+        redValue = 255
+        greenValue = int(255 - 255 * (i - 70) / 30)
+        blueValue = 0
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+
+// ************************************************************************************
+// Calculate if the RSI is high or low
+// 
+// ************************************************************************************
+
+// Stochastic RSI Values
+k = smma(ta.stoch(close, high, low, periodK), smoothK)
+d = smma(k, smoothD)
+divergence = (math.round(k) - math.round(d)) + 50
+rsiclr = array.get(colors, math.round(d)) 
+bgcolor(color.rgb(150, 147, 147))
+hline(rsiob, "Overbought", color=color.new(#787B86, 50))
+hline(50, "Base", color=color.new(#787B86, 50))
+hline(rsios, "Oversold", color=color.new(#787B86, 50))
+plot(divergence, title = 'Divergence', linewidth = 2, style = plot.style_columns, color = color.rgb(75, 72, 252), histbase = 50)
+plot(k, title = 'K', linewidth = 2, style = plot.style_line, color = color.rgb(4, 0, 255))
+plot(d, title = 'D', linewidth = 2, style = plot.style_line, color = color.rgb(255, 174, 0))

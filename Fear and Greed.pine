@@ -1,0 +1,36 @@
+//@version=4
+study("Fear and Greed Indicator", shorttitle="FGI", overlay=false)
+
+// Input Parameters
+rsiPeriod = input(14, title="RSI Period", minval=1)
+rocPeriod = input(10, title="ROC Period", minval=1)
+atrPeriod = input(14, title="ATR Period", minval=1)
+
+// Market Momentum (RSI or ROC)
+rsi = rsi(close, rsiPeriod)
+roc = roc(close, rocPeriod)
+momentum = (rsi + roc) / 2
+
+// Market Volatility (ATR)
+volatility = atr(atrPeriod)
+
+// Market Performance (S&P 500)
+ticker = input("CMC200", type=input.symbol, title="Market Index Symbol")
+market_performance = security(ticker, "D", close)
+
+// Normalize Factors
+normalize(src, minval, maxval) =>
+    (src - minval) / (maxval - minval)
+
+momentum_norm = normalize(momentum, 0, 100)
+volatility_norm = normalize(volatility, 0, 100)
+performance_norm = normalize(market_performance, 0, 100)
+
+// Calculate Fear and Greed Index
+fear_and_greed = (momentum_norm + (1 - volatility_norm) + performance_norm) / 3
+
+// Plot Fear and Greed Index
+plot(fear_and_greed, color=color.red, linewidth=2, title="Fear and Greed Index")
+
+// Plot Background Color
+bgcolor(fear_and_greed > 50 ? color.green : color.red, transp=90)

@@ -1,0 +1,198 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+//@version=5
+indicator("RSI Window", format=format.percent, overlay = false)
+
+
+
+var multi_broker_group =  '========== Combine Stats from Multiple Brokers ========='
+broker_1 = input.symbol(title = "Broker 1", defval = "BINANCE:BTCUSDT", inline = "broker_1", group = multi_broker_group)
+broker_2 = input.symbol(title = "Broker 2", defval = "BINANCEUS:BTCUSDT", inline = "broker_2", group = multi_broker_group)
+broker_3 = input.symbol(title = "Broker 3", defval = "KUCOIN:BTCUSDT", inline = "broker_3", group = multi_broker_group)
+broker_4 = input.symbol(title = "Broker 4", defval = "BITGET:BTCUSDT", inline = "broker_4", group = multi_broker_group)
+broker_5 = input.symbol(title = "Broker 5", defval = "BYBIT:BTCUSDT", inline = "broker_5", group = multi_broker_group)
+bool symbol1 = input.bool(title = "Calculate", defval = false, inline = "broker_1", group = multi_broker_group)
+bool symbol2 = input.bool(title = "Calculate", defval = false, inline = "broker_2", group = multi_broker_group)
+bool symbol3 = input.bool(title = "Calculate", defval = false, inline = "broker_3", group = multi_broker_group)
+bool symbol4 = input.bool(title = "Calculate", defval = false, inline = "broker_4", group = multi_broker_group)
+bool symbol5 = input.bool(title = "Calculate", defval = false, inline = "broker_5", group = multi_broker_group)
+
+var RSI_group =          '============= RSI and Stochastic Settings =============='
+rsisrc = input.source(title = 'RSI Source', defval = close, group = RSI_group)
+int rsilen = input.int(title = 'RSI Length', defval = 14, minval = 1, group = RSI_group)
+rsi_fast_src = input.source(title = 'Fast RSI Source', defval = close, group = RSI_group)
+int rsi_len_fast = input.int(title = 'Fast RSI Length', defval = 5, minval = 1, group = RSI_group)
+int rsiob = input.int(title = 'RSI High Level', defval = 70, minval = 1, group = RSI_group)
+int rsios = input.int(title = 'RSI Low Level', defval = 30, minval = 1, group = RSI_group)
+color rsihighclr = input.color(title = 'RSI High Color', defval = #FF413B, inline = RSI_group, group = RSI_group)
+color rsilowclr = input.color(title = 'RSI Low Color', defval = #00fd7e, inline = RSI_group, group = RSI_group)
+color rsimidclr = input.color(title = 'RSI Mid Color', defval = #8AB5FF, inline = RSI_group, group = RSI_group)
+bool rsi_bg = input.bool(title = 'Add RSI colors to chart background', defval = true, group = RSI_group)
+bool plot_type = input.bool(title = 'Plot Candles instead of RSI line', defval = false, group = RSI_group)
+bool i_showFast = input.bool(title = 'Show The Fast Moving RSI Average', defval = false, group = RSI_group)
+
+var colors = array.new_color()
+if barstate.isfirst  
+    // Generate the green to red gradient
+    for i = 0 to 30
+        redValue = int(i * 8.5)
+        greenValue = 200
+        blueValue = 255
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+    // Generate the red to yellow gradient
+    for i = 31 to 70
+        redValue = 255
+        greenValue = 200
+        blueValue = int(255 - ((i - 30) * 6.375 ))
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+    // Generate the brighter yellow gradient
+    for i = 71 to 100
+        redValue = 255
+        greenValue = int(255 - (i - 70) )
+        blueValue = 0
+        array.push(colors, color.rgb(redValue, greenValue, blueValue))
+
+// ************************************************************************************
+// function smma 
+// formula (smma[1] * (length - 1) + src) / length
+// returns smma
+// ************************************************************************************
+smma(src, length) =>
+    sma = ta.sma(src, length)
+    smma = 0.0
+    smma := na(smma[1]) ? sma : (smma[1] * (length - 1) + src) / length
+    smma
+// ************************************************************************************
+// local_rsi
+// Returns rsi (array)
+// ************************************************************************************
+rsi (_source, _length) =>
+    rsi = array.new_float(0)
+    rsi_up_fast = ta.rma(math.max(ta.change(rsi_fast_src), 0), rsi_len_fast)
+    rsi_down_fast = ta.rma(-math.min(ta.change(rsi_fast_src), 0), rsi_len_fast)
+    rsi_fast = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - (100 / (1 + rsi_up_fast / rsi_down_fast))
+    rsi_up_slow = ta.rma(math.max(ta.change(_source), 0), _length)
+    rsi_down_slow = ta.rma(-math.min(ta.change(_source), 0), _length)
+    rsi_slow = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - (100 / (1 + rsi_up_slow / rsi_down_slow))
+    array.push(rsi, rsi_fast)
+    array.push(rsi, rsi_slow)
+    rsi
+// Calculate RSI for each brokerage
+
+brokerage1_rsi_open = symbol1 ? request.security(broker_1, timeframe.period, array.get(rsi(open, rsilen), 1)) : na
+brokerage2_rsi_open = symbol2 ? request.security(broker_2, timeframe.period, array.get(rsi(open, rsilen), 1)) : na
+brokerage3_rsi_open = symbol3 ? request.security(broker_3, timeframe.period, array.get(rsi(open, rsilen), 1)) : na
+brokerage4_rsi_open = symbol4 ? request.security(broker_4, timeframe.period, array.get(rsi(open, rsilen), 1)) : na
+brokerage5_rsi_open = symbol5 ? request.security(broker_5, timeframe.period, array.get(rsi(open, rsilen), 1)) : na
+
+brokerage1_rsi_high = symbol1 ? request.security(broker_1, timeframe.period, array.get(rsi(high, rsilen), 1)) : na
+brokerage2_rsi_high = symbol2 ? request.security(broker_2, timeframe.period, array.get(rsi(high, rsilen), 1)) : na
+brokerage3_rsi_high = symbol3 ? request.security(broker_3, timeframe.period, array.get(rsi(high, rsilen), 1)) : na
+brokerage4_rsi_high = symbol4 ? request.security(broker_4, timeframe.period, array.get(rsi(high, rsilen), 1)) : na
+brokerage5_rsi_high = symbol5 ? request.security(broker_5, timeframe.period, array.get(rsi(high, rsilen), 1)) : na
+
+brokerage1_rsi_low = symbol1 ? request.security(broker_1, timeframe.period, array.get(rsi(low, rsilen), 1)) : na
+brokerage2_rsi_low = symbol2 ? request.security(broker_2, timeframe.period, array.get(rsi(low, rsilen), 1)) : na
+brokerage3_rsi_low = symbol3 ? request.security(broker_3, timeframe.period, array.get(rsi(low, rsilen), 1)) : na
+brokerage4_rsi_low = symbol4 ? request.security(broker_4, timeframe.period, array.get(rsi(low, rsilen), 1)) : na
+brokerage5_rsi_low = symbol5 ? request.security(broker_5, timeframe.period, array.get(rsi(low, rsilen), 1)) : na
+
+brokerage1_rsi_close = symbol1 ? request.security(broker_1, timeframe.period, array.get(rsi(close, rsilen), 1)) : na
+brokerage2_rsi_close = symbol2 ? request.security(broker_2, timeframe.period, array.get(rsi(close, rsilen), 1)) : na
+brokerage3_rsi_close = symbol3 ? request.security(broker_3, timeframe.period, array.get(rsi(close, rsilen), 1)) : na
+brokerage4_rsi_close = symbol4 ? request.security(broker_4, timeframe.period, array.get(rsi(close, rsilen), 1)) : na
+brokerage5_rsi_close = symbol5 ? request.security(broker_5, timeframe.period, array.get(rsi(close, rsilen), 1)) : na
+
+combined_rsi_open = 0.0000000000
+combined_rsi_high = 0.0000000000
+combined_rsi_low = 0.0000000000
+combined_rsi_close = 0.0000000000
+symCount = 0
+
+if symbol1
+    combined_rsi_open := combined_rsi_open + brokerage1_rsi_open
+    combined_rsi_high := combined_rsi_high + brokerage1_rsi_high
+    combined_rsi_low := combined_rsi_low + brokerage1_rsi_low
+    combined_rsi_close := combined_rsi_close + brokerage1_rsi_close
+    symCount := symCount + 1
+if symbol2
+    combined_rsi_open := combined_rsi_open + brokerage2_rsi_open
+    combined_rsi_high := combined_rsi_high + brokerage2_rsi_high
+    combined_rsi_low := combined_rsi_low + brokerage2_rsi_low
+    combined_rsi_close := combined_rsi_close + brokerage2_rsi_close
+    symCount := symCount + 1
+if symbol3
+    combined_rsi_open := combined_rsi_open + brokerage3_rsi_open
+    combined_rsi_high := combined_rsi_high + brokerage3_rsi_high
+    combined_rsi_low := combined_rsi_low + brokerage3_rsi_low
+    combined_rsi_close := combined_rsi_close + brokerage3_rsi_close
+    symCount := symCount + 1
+if symbol4
+    combined_rsi_open := combined_rsi_open + brokerage4_rsi_open
+    combined_rsi_high := combined_rsi_high + brokerage4_rsi_high
+    combined_rsi_low := combined_rsi_low + brokerage4_rsi_low
+    combined_rsi_close := combined_rsi_close + brokerage4_rsi_close
+    symCount := symCount + 1
+if symbol5
+    combined_rsi_open := combined_rsi_open + brokerage5_rsi_open
+    combined_rsi_high := combined_rsi_high + brokerage5_rsi_high
+    combined_rsi_low := combined_rsi_low + brokerage5_rsi_low
+    combined_rsi_close := combined_rsi_close + brokerage5_rsi_close
+    symCount := symCount + 1
+
+combined_rsi_open := combined_rsi_open / symCount
+combined_rsi_high := combined_rsi_high / symCount
+combined_rsi_low := combined_rsi_low / symCount
+combined_rsi_close := combined_rsi_close / symCount
+
+combined_rsi_val = rsisrc == open ? combined_rsi_open : rsisrc == high ? combined_rsi_high : rsisrc == low ? combined_rsi_low : rsisrc == close ? combined_rsi_close : rsisrc == hl2 ? ((combined_rsi_high + combined_rsi_low) / 2) : rsisrc == hlc3 ? ((combined_rsi_high + combined_rsi_low + combined_rsi_close) / 3) : rsisrc == hlcc4 ? ((combined_rsi_high + combined_rsi_low + combined_rsi_close + combined_rsi_close) / 4) : rsisrc == ohlc4 ? ((combined_rsi_open + combined_rsi_high + combined_rsi_low + combined_rsi_close) / 4) : na 
+
+// ************************************************************************************
+// Calculate if the RSI is high or low
+// Modified version of rsi function from https://zenandtheartoftrading.com/pinescript/generate-trading-signals-with-rsi/
+// ************************************************************************************
+local_rsi_open = array.get(rsi(open, rsilen), 1)
+local_rsi_high = array.get(rsi(high, rsilen), 1)
+local_rsi_low = array.get(rsi(low, rsilen), 1)
+local_rsi_close = array.get(rsi(close, rsilen), 1)
+
+rsi_open = plot_type and combined_rsi_open > 0 ? ((combined_rsi_open + local_rsi_open) / 2) : local_rsi_open
+rsi_high = plot_type and combined_rsi_high > 0 ? ((combined_rsi_high + local_rsi_high) / 2) : local_rsi_high
+rsi_low = plot_type and combined_rsi_low > 0 ? ((combined_rsi_low + local_rsi_low) / 2) : local_rsi_low
+rsi_close = plot_type and combined_rsi_close > 0 ? ((combined_rsi_close + local_rsi_close) / 2) : local_rsi_close
+
+rsi = rsi(rsisrc, rsilen)
+rsi_fast = array.get(rsi, 0)
+rsi_slow = array.get(rsi, 1) 
+divergence = (rsi_fast - rsi_slow) + 50
+
+rsival = symbol1 or symbol2 or symbol3 or symbol4 or symbol5 ? (rsi_slow + combined_rsi_val) / 2 : rsi_slow
+is_rsi_ob = rsival >= rsiob
+is_rsi_os = rsival <= rsios
+
+rsiclr = array.get(colors, math.round(rsival)) 
+bgcolor(rsi_bg ? rsiclr : na)
+
+bullishColor = color.rgb(0, 238, 71)
+bearishColor = color.rgb(255, 8, 0)
+
+rsi_div_color = rsi_fast > rsi_slow ? bullishColor : bearishColor
+
+display_candles = plot_type ? display.all : display.none
+display_line = plot_type ? display.none : display.all
+
+
+candleColor = rsi_close > rsi_open ? color.green : color.red 
+hline(rsiob, "Overbought", color=color.new(#787B86, 50))
+hline(50, "Base", color=color.new(#787B86, 50)) 
+hline(rsios, "Oversold", color=color.new(#787B86, 50))
+plot(divergence, title = 'Divergence', linewidth = 1, style = plot.style_columns, color = rsi_div_color, histbase = 50 )
+plot(rsival, title = 'RSI', linewidth = 2, style = plot.style_line, color = color.rgb(37, 95, 255), display = display_line)
+plot(i_showFast ? rsi_fast : na, title = 'RSI Fast', linewidth = 1, style = plot.style_line, color = color.rgb(9, 0, 133))
+plotcandle(rsi_open, rsi_high, rsi_low, rsi_close, title = "RSI CANDLES", color = candleColor, display = display_candles)
+//plot(ta.sma(rsival, 120), color = color.rgb(0, 0, 0,0))
+line ln = na
+line.delete(ln[1])
+ln := line.new(bar_index - 1, rsi_close, bar_index, rsi_close, width=1, color=candleColor, extend=extend.both, style=line.style_dotted ) 

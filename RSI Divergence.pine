@@ -1,0 +1,23 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=5
+indicator(title='RSI Divergence', shorttitle='RSI Divergence')
+rsi_src_fast = close
+rsi_fast_len = input.int(5, minval=1, title='Length Fast RSI')
+rsisrc = close
+rsilen = input.int(14, minval=1, title='Length Slow RSI')
+rsi_up_fast = ta.rma(math.max(ta.change(rsi_src_fast), 0), rsi_fast_len)
+rsi_down_fast = ta.rma(-math.min(ta.change(rsi_src_fast), 0), rsi_fast_len)
+rsi_fast = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - 100 / (1 + rsi_up_fast / rsi_down_fast)
+rsi_up_slow = ta.rma(math.max(ta.change(rsisrc), 0), rsilen)
+rsi_down_slow = ta.rma(-math.min(ta.change(rsisrc), 0), rsilen)
+rsi_slow = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - 100 / (1 + rsi_up_slow / rsi_down_slow)
+//plotfast = plot(rsi_fast, color=blue)
+//plotslow = plot(rsi_slow, color=orange)
+divergence = rsi_fast - rsi_slow
+//plotdiv = plot(divergence, color = divergence > 0 ? lime:red, linewidth = 2)
+//band1 = hline(70,color=green)
+//band0 = hline(30,color=red)
+band = hline(0)
+

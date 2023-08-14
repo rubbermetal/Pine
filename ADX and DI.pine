@@ -1,0 +1,49 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=4
+
+study("ADX and DI for v4")
+len = input(14)
+th = input(25)
+pt = input(75)
+
+
+TrueRange = max(max(high-low, abs(high-nz(close[1]))), abs(low-nz(close[1])))
+DirectionalMovementPlus = high-nz(high[1]) > nz(low[1])-low ? max(high-nz(high[1]), 0): 0
+DirectionalMovementMinus = nz(low[1])-low > high-nz(high[1]) ? max(nz(low[1])-low, 0): 0
+
+SmoothedTrueRange = 0.0
+SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1])/len) + TrueRange
+
+SmoothedDirectionalMovementPlus = 0.0
+SmoothedDirectionalMovementPlus := nz(SmoothedDirectionalMovementPlus[1]) - (nz(SmoothedDirectionalMovementPlus[1])/len) + DirectionalMovementPlus
+
+SmoothedDirectionalMovementMinus = 0.0
+SmoothedDirectionalMovementMinus := nz(SmoothedDirectionalMovementMinus[1]) - (nz(SmoothedDirectionalMovementMinus[1])/len) + DirectionalMovementMinus
+
+DIPlus = SmoothedDirectionalMovementPlus / SmoothedTrueRange * 100
+DIMinus = SmoothedDirectionalMovementMinus / SmoothedTrueRange * 100
+DX = abs(DIPlus-DIMinus) / (DIPlus+DIMinus)*100
+ADX = sma(DX, len)
+ub = plot(100, color=color.rgb(108, 109, 109))
+top = plot(pt, color=color.rgb(108, 109, 109))
+plot(65, color=color.rgb(122,136,138))
+plot(55, color=color.rgb(122,136,138))
+plot(45, color=color.rgb(122,136,138))
+plot(35, color=color.rgb(122,136,138))
+bottom = plot(th, color=color.rgb(108, 109, 109))
+lb = plot(0, color=color.rgb(108, 109, 109))
+colorUp = color.rgb(0, 253, 8)
+colorDown = color.rgb(255, 0, 0)
+colorNeutral = color.rgb(255,255,255)
+
+fill(bottom, lb,color.rgb(203, 248, 255))
+fill(top,bottom,color.rgb(108, 109, 109))
+fill(ub,top,color.rgb(238, 130, 130))
+//Plus = plot(DIPlus, color=color.rgb(0, 255, 8), title="DI+", style=plot.style_area)
+//Minus = plot(DIMinus, color=color.rgb(255, 0, 0), title="DI-", style=plot.style_area)
+bands = DIPlus > DIMinus ? colorUp : DIPlus < DIMinus ? colorDown : colorNeutral
+//fill(Plus, Minus, bands, 50)
+plot(ADX, color=bands, title="ADX", linewidth=2)
+

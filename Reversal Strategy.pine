@@ -1,0 +1,65 @@
+//@version=5
+strategy("Reversal Trading Strategy with RSI, Stochastic, and ATR", overlay=true, shorttitle="Reversal RSI Stochastic ATR", pyramiding=1, default_qty_type=strategy.percent_of_equity, default_qty_value=20)
+
+// Define inputs
+rsi_length = input(title="RSI Length", defval=14)
+rsi_overbought = input(title="RSI Overbought Level", defval=70)
+rsi_oversold = input(title="RSI Oversold Level", defval=30)
+stoch_length = input(title="Stochastic Length", defval=14)
+stoch_k = input(title="%K Smoothing", defval=3)
+stoch_d = input(title="%D Smoothing", defval=3)
+stoch_overbought = input(title="Stochastic Overbought Level", defval=80)
+stoch_oversold = input(title="Stochastic Oversold Level", defval=20)
+atr_length = input(title="ATR Length", defval=14)
+atr_multiplier = input(title="ATR Multiplier", defval=1.5)
+
+// Calculate indicators
+rsi = ta.rsi(close, rsi_length)
+stoch_k_line = ta.stoch(close, high, low, stoch_length)
+stoch_d_line = ta.sma(stoch_k_line, stoch_d)
+atr = ta.atr(atr_length)
+
+// Generate signals
+long_signal = rsi < rsi_oversold and stoch_k_line < stoch_oversold and ta.crossover(stoch_k_line, stoch_d_line)
+short_signal = rsi > rsi_overbought and stoch_k_line > stoch_overbought and ta.crossunder(stoch_k_line, stoch_d_line)
+
+// Execute trades with stop loss and take profit based on ATR
+if long_signal
+    strategy.entry("Long", strategy.long, stop=close - atr * atr_multiplier, limit=close + atr * atr_multiplier)
+if short_signal
+    strategy.entry("Short", strategy.short, stop=close + atr * atr_multiplier, limit=close - atr * atr_multiplier)
+
+// Plot indicators
+hline(rsi_overbought, "RSI Overbought", color=color.red)
+hline(rsi_oversold, "RSI Oversold", color=color.green)
+plot(rsi, color=color.blue, linewidth=1, title="RSI")
+hline(stoch_overbought, "Stochastic Overbought", color=color.red)
+hline(stoch_oversold, "Stochastic Oversold", color=color.green)
+plot(stoch_k_line, color=color.blue, linewidth=1, title="%K")
+plot(stoch_d_line, color=color.red, linewidth=1, title="%D")
+
+bgcolor(long_signal ? color.new(color.green, 90) : na)
+bgcolor(short_signal ? color.new(color.red, 90) : na)
+
+// Line and label settings
+line_color = input(color.orange, title="Line Color")
+line_width = input(2, title="Line Width")
+
+// Track the most recent entry price
+var float entry_price = na
+if long_signal
+    entry_price := close
+if short_signal
+    entry_price := close
+
+// Plot a horizontal line at the most recent entry price
+if not na(entry_price)
+    line.new(x1=bar_index[1], x2=bar_index, y1=entry_price, y2=entry_price, color=line_color, width=line_width)
+
+// Calculate approximate position size and value of the trade
+equity = strategy.equity
+position_size_approx = (equity * 0.2)
+current_value_approx = (position_size_approx * (close - entry_price)) * (strategy.position_size > 0 ? 1 : -1)
+
+// Display label with position size and current value of the trade
+label.new(x=bar_index, y=entry_price, text="Position Size: " + str.tostring(position_size_approx) + "\nCurrent Value: " + str.tostring(current_value_approx), color=color.gray, textcolor=color.white, style=label.style_label_left)

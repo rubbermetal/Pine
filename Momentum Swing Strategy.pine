@@ -1,0 +1,57 @@
+//@version=5
+strategy('Improved Momentum Indicator Strategy', overlay=true)
+
+// Define inputs
+fast_length = input(title='Fast Length', defval=5)
+slow_length = input(title='Slow Length', defval=12)
+rsi_length = input(title='RSI Length', defval=14)
+adxPeriod = input(14, title='ADX Period')
+atrLength = input(14, title='ATR Length')
+high_volume_multiplier = input.float(2.0, title='High Volume Multiplier', minval=1)
+atr_stop_loss_multiplier = input.int(2, title='ATR Stop Loss Multiplier', minval=1)
+
+
+// Calculate indicators
+ema_fast = ta.ema(close, fast_length)
+ema_slow = ta.ema(close, slow_length)
+macd = ema_fast - ema_slow
+macd_signal = ta.ema(macd, 9)
+rsi = ta.rsi(close, rsi_length)
+avg_volume = ta.sma(volume, 50)
+
+//Calculate ADX
+[diPlus, diMinus, adxValue] = ta.dmi(adxPeriod, 14)
+
+// Calculate ATR
+atr = ta.atr(atrLength)
+
+// Determine candle color
+candle_color = close > open ? color.green : color.red
+high_vol_up_color = color.new(#2327f7, 70)
+high_vol_down_color = color.new(#f12424, 70)
+
+// Detect high volume moves
+high_vol_up = close > open and volume > high_volume_multiplier * avg_volume
+high_vol_down = close < open and volume > high_volume_multiplier * avg_volume
+
+// Generate signals
+long_signal = ta.crossover(macd, macd_signal) and rsi < 30 and adxValue > 25
+short_signal = ta.crossunder(macd, macd_signal) and rsi > 70 and adxValue > 25
+
+// Execute trades
+if long_signal
+    strategy.entry('Buy', strategy.long)
+    strategy.exit("Exit Long", "Buy", stop=close - atr * atr_stop_loss_multiplier, trail_points=atr * atr_stop_loss_multiplier)
+
+if short_signal
+    strategy.entry('Sell', strategy.short)
+    strategy.exit("Exit Short", "Sell", stop=close + atr * atr_stop_loss_multiplier, trail_points=atr * atr_stop_loss_multiplier)
+
+// Plot indicators
+plot(macd, color=color.new(color.blue, 0))
+plot(macd_signal, color=color.new(color.yellow, 0))
+plot(rsi, color=color.new(color.red, 0))
+plot(adxValue, color=color.new(color.green, 0))
+
+// Plot candles
+barcolor(high_vol_up ? high_vol_up_color : high_vol_down ? high_vol_down_color : candle_color)

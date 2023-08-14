@@ -1,0 +1,1146 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+//@version=5
+// TODO:
+// Add RSI Divergence
+// Add upper time frame divergence and trend
+// Revert to Version 1152 for EMA Ribbon. Had to remove due to plot limit of 64
+// Support and Resistance bands are also in version 1152 but are commented out
+//strategy('Trade Worthy', overlay=true, pyramiding=5, default_qty_type=strategy.percent_of_equity, default_qty_value=20, initial_capital=369)
+indicator('Trade Worthy', overlay=true, shorttitle="TW", format=format.price, precision=1, scale=scale.right)
+//functions -------------------------------------
+// ************************************************************************************
+// function normalize 
+// 
+// ************************************************************************************
+normalize(src, minval, maxval) =>
+    (src - minval) / (maxval - minval)
+// ************************************************************************************
+// function calc_zlema 
+// returns smmema1+da
+// ************************************************************************************
+calc_zlema(src, length) =>
+    ema1 = ta.ema(src, length)
+    ema2 = ta.ema(ema1, length)
+    d = ema1 - ema2
+    ema1 + d
+// ************************************************************************************
+// function format_currency 
+// returns f_number
+// ************************************************************************************
+format_currency(raw_number) =>
+    f_currency = str.format("{0,number,currency}", raw_number)
+    f_currency
+// ************************************************************************************
+// function format_currency 
+// returns f_number
+// ************************************************************************************
+format_number(raw_number) =>
+    f_number = str.format("{0}", raw_number)
+    f_number
+// ************************************************************************************
+// function smma 
+// formula (smma[1] * (length - 1) + src) / length
+// returns smma
+// ************************************************************************************
+smma(src, length) =>
+    sma = ta.sma(src, length)
+    smma = 0.0
+    smma := na(smma[1]) ? sma : (smma[1] * (length - 1) + src) / length
+    smma
+// ************************************************************************************
+// function perc_calc 
+// formula percentage = (x / y) * 100
+// returns perc
+// ToDo: Fix value when its close to zero
+// ************************************************************************************
+perc(x, y) =>
+    xa = x < 1 ? 1 : x
+    n = xa / y * 100
+    n
+// ************************************************************************************
+// function draw_sig 
+// draws the buy/sell signals
+// ************************************************************************************
+draw_sig(rsi_b, rsi_s, tp, sl, q, strategy) =>
+//gcslow = gcslowsmooth and i_showGCsma ? smma(gcslowsrc, gcslowlen) : i_showGCsma ? ta.sma(gcslowsrc, gcslowlen) : na
+    
+    
+    if rsi_b and strategy == 'RSI'
+        //strategy.entry('Long', strategy.long, stop=close - q * sl, limit=close + q * tp)
+        buy = label.new(bar_index, low, text="BUY", style=label.style_label_up )
+        label.set_xloc(buy, time, xloc.bar_time)
+        label.set_yloc(buy, yloc.belowbar)
+        label.set_color(buy, color.green)
+        label.set_size(buy, size.small)
+    if rsi_s and strategy == 'RSI'
+        //strategy.entry('Short', strategy.short, stop=close + q * sl, limit=close - q * tp)
+        sell = label.new(bar_index, high, text="SELL", style=label.style_label_down )
+        label.set_xloc(sell, time, xloc.bar_time)
+        label.set_yloc(sell, yloc.abovebar)
+        label.set_color(sell, color.red)
+        label.set_size(sell, size.small)
+      
+// ************************************************************************************
+// function f_cmo 
+// 
+// ************************************************************************************
+f_cmo(src, length) =>
+    float mom = ta.change(src)
+    float sm1 = math.sum(mom >= 0 ? mom : 0.0, length)
+    float sm2 = math.sum(mom >= 0 ? 0.0 : -mom, length)
+    return_1 = 100 * (sm1 - sm2) / (sm1 + sm2)
+    return_1
+// ************************************************************************************
+// function f_round 
+// 
+// ************************************************************************************
+f_round(_val, _decimals) =>
+    if _decimals == -1
+        _val
+    else
+        _p = math.pow(10, _decimals)
+        math.round(math.abs(_val) * _p) / _p * math.sign(_val)
+// ************************************************************************************
+// function f_strHelp 
+// 
+// ************************************************************************************
+f_strHelp(_prefix, _var, _round, nl) =>
+    _res = str.tostring(f_round(_var, _round))
+    _prefix + '' + _res + nl
+
+// ************************************************************************************
+// function format_string 
+// 
+// ************************************************************************************
+format_string(str, v, nl) =>
+    str + '' + v + nl
+
+// ************************************************************************************
+// function format_indicator_info 
+// 
+// ************************************************************************************
+format_indicator_info(str, v) =>
+    openChar = " ("
+    closeChar = ")"
+    str + openChar + str.tostring(v) + closeChar
+
+// ************************************************************************************
+// function format_indicator_info 
+// 
+// ************************************************************************************
+format_signal_info(str, v, vb) =>
+    openChar = " ("
+    closeChar = ")"
+    str + openChar + str.tostring(v) + ',' + str.tostring(vb) + closeChar
+
+// ************************************************************************************
+// function dashboard_cell_color 
+// 
+// ************************************************************************************
+dashboard_cell_color (ind, c1, c2, c3)=>
+    cell_color = ind == 'Bullish' ? c1 : ind == 'Up' ? c1 : ind == 'Golden' ? c1 : ind == 'Buy' ? c1 : ind == 'Bearish' ? c2 : ind == 'Down' ? c2 : ind == 'Death' ? c2 : ind == 'Sell' ? c2 : c3
+    cell_color
+
+// ************************************************************************************
+// function indicator_status_color 
+// 
+// ************************************************************************************
+indicator_status_color(v, ob, os) =>
+    trans = v <= os ? (v + os) : v >= ob ? (100 - v) : (os - v) + ob
+    osclr = color.rgb(74, 255, 95, trans)
+    obclr = color.rgb(241, 78, 78, trans)
+    nclr = color.rgb(255, 255, 255)
+    
+    clr = v >= ob ? obclr : v <= os ? osclr : nclr
+
+// ************************************************************************************
+// function candleColor
+// PVSRA Candles
+// Green (bull) and red (bear): Candles with volume >= 200% of the average volume of the 10 previous chart candles, 
+// and candles where the product of candle spread x candle volume is >= the highest for the 10 previous chart time candles.
+// Blue (bull) and blue-violet (bear): Candles with volume >= 150% of the average volume of the 10 previous chart candles
+// ************************************************************************************
+candleColor (_vol_val, _avgVol) =>
+    CUColor = color.lime  // Climax up (bull) bull and bear both start with b so it would be weird hence up down
+    CDColor = color.rgb(255, 0, 0)  // Climax down (bear)
+
+    AUColor = color.blue  //Avobe average up (bull)
+    ADColor = color.fuchsia  //Above average down (bear))
+
+    NUColor = color.white // neutral up
+    NDColor = color.orange // neutral down
+
+    volState = _vol_val >= (2.0 * _avgVol)  ? 2 :  _vol_val >= (1.5 * _avgVol) ? 1 : 0
+    isBull = close > open ? true : false
+    candleColor = isBull and volState == 0 ? NUColor : isBull and volState == 1 ? AUColor : isBull and volState == 2 ? CUColor : isBull == false and volState == 0 ? NDColor : isBull == false and volState == 1 ? ADColor : isBull == false and volState == 2 ? CDColor : na
+    candleColor
+// ************************************************************************************
+// gradient 
+// Gives the ability to color in gradients
+// ************************************************************************************
+gradient(os) => os < 10 ? #ff1100 : math.max(os,10) < 20 ? #d12033 :
+  math.max(os,20) < 30 ? #bd2649 : math.max(os,30) < 40 ? #a72d61 :
+  math.max(os,40) < 50 ? #913479 : math.max(os,50) < 60 ? #743d99 :
+  math.max(os,60) < 70 ? #5945b6 : math.max(os,70) < 80 ? #494ac7 :
+  math.max(os,80) < 90 ? #3750db : #2157f3 
+  
+// ************************************************************************************
+
+// Define Tooltips
+tip_showStats = 'Include or disclude the statistical information section on the Data Dashboard.'
+tip_showMoms = 'Include or disclude the Indicator information section on the Data Dashboard.'
+tip_showVolume = 'Include or disclude the Volume Information section on the Data Dashboard.'
+tip_showSignal = 'Include or disclude the Signals section on the Data Dashboard.'
+//tip_showRibbon = 'Include or disclude the EMA Ribbon overlay on the chart.'
+tip_showALMA = 'Include or disclude the ALMA overlay on the chart.'
+tip_showALMAcross = 'Include or disclude the ALMA Crosses overlay on the chart.'
+tip_showZLSMA = 'Include or disclude the ZLSMA overlay on the chart.'
+tip_showZema = 'Include or disclude the Zero Lag EMA overlay on the chart.'
+tip_showGCfma = 'Include or disclude the Fast Moving EMA overlay on the chart.'
+tip_showGCsma = 'Include or disclude the Slow Moving EMA overlay on the chart.'
+tip_showGCcross = 'Include or disclude the EMA Cross overlay on the chart.'
+tip_showMACDcross = 'Include or disclude the MacD Cross overlay on the chart.'
+tip_showIMACDcross = 'Include or disclude the Impulse MacD Cross overlay on the chart.'
+tip_showGator = 'Include or disclude the Williams Alligator overlay on the chart.'
+//tip_showSR = 'Include or disclude the Support and Resistance Bands overlay on the chart.'
+tip_showBB = 'Include or disclude the Bollinger Bands overlay on the chart.'
+tip_showKC = 'Include or disclude the Keltner Channel overlay on the chart.'
+tip_showPi = 'Include or disclude the Pi Moving Averages overlay on the chart.'
+tip_showEmaTrend = 'Include or disclude the EMA Trend Catcher overlay on the chart.'
+// Config ---------------------------------------
+
+i_show_group =            '================== Choose Indicators ==================='
+bool i_showStats = input.bool(title = 'Show Stats', defval = true, group = i_show_group, tooltip = tip_showStats)
+bool i_showMoms = input.bool(title = 'Show Indicator Information', defval = true, group = i_show_group, tooltip = tip_showMoms)
+bool i_showVolume = input.bool(title = 'Show Volume Information', defval = true, group = i_show_group, tooltip = tip_showVolume)
+bool i_showSignal = input.bool(title = 'Show Signals', defval = true, group = i_show_group, tooltip = tip_showSignal)
+//bool i_showRibbon = input.bool(title = 'Show The EMA Ribbon', defval = false, group = i_show_group, tooltip = tip_showRibbon)
+bool i_showALMA = input.bool(title = 'Show The ALMA', defval = false, group = i_show_group, tooltip = tip_showALMA)
+bool i_showALMAcross = input.bool(title = 'Show The ALMA Cross', defval = false, group = i_show_group, tooltip = tip_showALMAcross)
+bool i_showZLSMA = input.bool(title = 'Show The ZLSMA', defval = false, group = i_show_group, tooltip = tip_showZLSMA)
+bool i_showZema = input.bool(title = 'Show The Zero Lag EMA', defval = false, group = i_show_group, tooltip = tip_showZema)
+bool i_showGCfma = input.bool(title = 'Show The EMA 50', defval = false, group = i_show_group, tooltip =  tip_showGCfma)
+bool i_showGCsma = input.bool(title = 'Show The EMA 200', defval = false, group = i_show_group, tooltip =  tip_showGCsma)
+bool i_showGCcross = input.bool(title = 'Show The EMA Cross', defval = false, group = i_show_group, tooltip =  tip_showGCcross)
+bool i_showMACDcross = input.bool(title = 'Show The MACD Cross', defval = false, group = i_show_group, tooltip =  tip_showMACDcross)
+bool i_showIMACDcross = input.bool(title = 'Show The Impulse MacD Cross', defval = false, group = i_show_group, tooltip =  tip_showIMACDcross)
+bool i_showGator = input.bool(title = 'Show The Gator', defval = false, group = i_show_group, tooltip =  tip_showGator)
+//bool i_showSR = input.bool(title = 'Show The Support and Resistance Bands', defval = true, group = i_show_group, tooltip =  tip_showSR)
+bool i_showBB = input.bool(title="Show Bollinger Band", defval = false, group = i_show_group, tooltip =  tip_showBB)
+bool i_showKC = input.bool(title="Show Keltner Channel", defval = false, group = i_show_group, tooltip =  tip_showKC)
+bool i_showPi = input.bool(title="Show Pi Moving Averages", defval = true, group = i_show_group, tooltip =  tip_showPi)
+bool i_showEmaTrend = input.bool(title = 'Show The Ema Trend Catcher', defval = false, group = i_show_group, tooltip =  tip_showEmaTrend)
+bool i_showDarkMode = input.bool(title = "Show Dark Mode", defval=true, group = i_show_group)
+
+var dashboard_group =     '================== DashBoard Settings =================='
+string dash_loc = input.string ("Top Right", title = "Dashboard Location" , options = ["Top Right","Bottom Right","Top Left","Bottom Left"], group = dashboard_group)
+string text_size = input.string('Small', title = "Dashboard Size", options = ["Tiny","Small","Normal","Large"], group = dashboard_group)
+color txt_col = input.color(color.gray, title = 'Text Color', group = dashboard_group)
+color dashboard_bgcolor = input.color(color.rgb(255, 255, 255), title = 'Dashboard Background Color', group = dashboard_group)
+color dashboard_hd_bgcolor = input.color(color.gray, title = 'Dashboard Header Background Color', group = dashboard_group)
+color dashboard_hd_txt = input.color(color.rgb(255, 255, 255), title = 'Dashboard Header Text Color', group = dashboard_group)
+color dashboard_bullish_color = input.color(color.rgb(74, 255, 95, 75), title = 'Dashboard Bullish Cell Color', group = dashboard_group)
+color dashboard_bearish_color = input.color(color.rgb(241, 78, 78, 75), title = 'Dashboard Bearish Cell Color', group = dashboard_group)
+
+var long_short_group =    '====== Broker to use for showing Long and Shorts ======='
+short_broker = input.symbol(title = "Short Broker", defval = "BITFINEX:BTCUSDSHORTS", group = long_short_group)
+long_broker = input.symbol(title = "Long Broker", defval = "BITFINEX:BTCUSDLONGS", group = long_short_group)
+
+var multi_broker_group =  '========== Combine Stats from Multiple Brokers ========='
+broker_1 = input.symbol(title = "Broker 1", defval = "BINANCE:BTCUSDT", inline = "broker_1", group = multi_broker_group)
+broker_2 = input.symbol(title = "Broker 2", defval = "BINANCEUS:BTCUSDT", inline = "broker_2", group = multi_broker_group)
+broker_3 = input.symbol(title = "Broker 3", defval = "KUCOIN:BTCUSDT", inline = "broker_3", group = multi_broker_group)
+broker_4 = input.symbol(title = "Broker 4", defval = "BITGET:BTCUSDT", inline = "broker_4", group = multi_broker_group)
+broker_5 = input.symbol(title = "Broker 5", defval = "BYBIT:BTCUSDT", inline = "broker_5", group = multi_broker_group)
+bool symbol1 = input.bool(title = "Calculate", defval = false, inline = "broker_1", group = multi_broker_group)
+bool symbol2 = input.bool(title = "Calculate", defval = false, inline = "broker_2", group = multi_broker_group)
+bool symbol3 = input.bool(title = "Calculate", defval = false, inline = "broker_3", group = multi_broker_group)
+bool symbol4 = input.bool(title = "Calculate", defval = false, inline = "broker_4", group = multi_broker_group)
+bool symbol5 = input.bool(title = "Calculate", defval = false, inline = "broker_5", group = multi_broker_group)
+bool brokerage1_volume_divbyclose = input.bool(title="Divide by Close", defval = false, inline = "broker_1", group = multi_broker_group)
+bool brokerage2_volume_divbyclose = input.bool(title="Divide by Close", defval = false, inline = "broker_2", group = multi_broker_group)
+bool brokerage3_volume_divbyclose = input.bool(title="Divide by Close", defval = false, inline = "broker_3", group = multi_broker_group)
+bool brokerage4_volume_divbyclose = input.bool(title="Divide by Close", defval = false, inline = "broker_4", group = multi_broker_group)
+bool brokerage5_volume_divbyclose = input.bool(title="Divide by Close", defval = false, inline = "broker_5", group = multi_broker_group)
+
+var tp_sl_group =         '===== Set Take Profit and Stop Loss ATR Multipliers ===='
+string strategy = input.string(title = 'Strategy', defval = 'RSI', options = ['RSI','Trend','Stochastic','CCI','MFI'], group = tp_sl_group)
+int takeProfit = input.int(title = 'Take Profit ATR Multiplier', defval = 3, minval = 1, group = tp_sl_group)
+int stopLoss = input.int(title = 'Stop Loss ATR Multiplier', defval = 1, minval = 1, group = tp_sl_group)
+
+var cog_group =           '==================== COG Settings ======================'
+int cog_len = input.int(title = 'Center of Gravity Length', defval = 10, minval = 2, maxval = 100, group = cog_group)
+cog_src = input.source(title = 'Center of Gravity Source', defval = close, group = cog_group)
+int windowsize = input.int(title="Trigger Window Size", defval=3)
+float offset = input.float(title="Trigger Offset", defval=0.85)
+float sigma = input.float(title="Trigger Sigma", defval=6)
+
+var ema_group =           '========== Golden Cross (EMA 50 and EMA 200) ==========='
+gcslowsrc = input.source(title = 'Slow Source', defval = close, group = ema_group)
+int gcslowlen = input.int(title = 'Slow Length', defval = 200, minval = 1, group = ema_group)
+int gcslowoffset = input.int(title = 'Slow Offset', defval = 0, minval = -1, maxval = 500, group = ema_group)
+gcfastsrc = input.source(title = 'Fast Source', defval = close, group = ema_group)
+int gcfastlen = input.int(title = 'Fast Length', defval = 50, minval = 1, group = ema_group)
+int gcfastoffset = input.int(title = 'Fast Offset', defval = 0, minval = -500, maxval = 500, group = ema_group)
+int gcfasttransclr = input.int(title = 'Fast Line Transp', defval = 0, minval = 0, maxval = 100, inline = ema_group, group = ema_group)
+int gcslowtransclr = input.int(title = 'Slow Line Transp', defval = 0, minval = 0, maxval = 100, inline = ema_group, group = ema_group)
+color gcfastlineclr = input.color(title = 'Fast Line ', defval = #FFFF19, inline = ema_group, group = ema_group)
+color gcslowlineclr = input.color(title = 'Slow Line', defval = #020202, inline = ema_group, group = ema_group)
+color upgccross = input.color(title = 'Golden Cross', defval = #CCCC00, inline = ema_group, group = ema_group)
+color downgccross = input.color(title = 'Death Cross', defval = #000000, inline = ema_group, group = ema_group)
+bool gcfastsmooth = input.bool(title = 'Smooth Fast Line', defval = false, inline = ema_group, group = ema_group)
+bool gcslowsmooth = input.bool(title = 'Smooth Slow Line', defval = false, inline = ema_group, group = ema_group)
+
+var pi_group =            '================ PI Top/Bottom Settings ================'
+int pislowlen = input.int(title="Long Moving Average", defval = 471, minval = 1, group = pi_group)
+int pifastlen = input.int(title="Short Moving Average", defval = 150, minval = 1, group = pi_group)
+string pi_resolution = input.string(title="Time interval", defval = 'D', group = pi_group)
+//bool pi_top_alert = input.bool(title="Send an alert on Pi Cycle Top?", defval = false, group = pi_group)
+//bool pi_bottom_alert = input.bool(title="Send an alert on bottom?", defval = false, group = pi_group)
+color piFastclr = input.color(title = 'Pi Fast Line Color', defval = #0bff17, inline = pi_group, group = pi_group)
+color piSlowclr = input.color(title = 'Pi Slow Line Color', defval = #fd5900, inline = pi_group, group = pi_group)
+
+var RSI_group =          '============= RSI and Stochastic Settings =============='
+rsisrc = input.source(title = 'RSI Source', defval = close, group = RSI_group)
+int rsilen = input.int(title = 'RSI Length', defval = 14, minval = 1, group = RSI_group)
+rsi_fast_src = input.source(title = 'Fast RSI Source', defval = close, group = RSI_group)
+int rsi_len_fast = input.int(title = 'Fast RSI Length', defval = 5, minval = 1, group = RSI_group)
+int rsiob = input.int(title = 'RSI High Level', defval = 70, minval = 1, group = RSI_group)
+int rsios = input.int(title = 'RSI Low Level', defval = 30, minval = 1, group = RSI_group)
+int periodK = input.int(title = 'Stochastic %K Length', defval = 14, minval = 1, group = RSI_group)
+int smoothD = input.int(title = 'Stochastic %D Smoothing', defval = 3, minval = 1, group = RSI_group)
+int smoothK = input.int(title = 'Stochastic %K Smoothing', defval = 1, minval = 1, group = RSI_group)
+color rsihighclr = input.color(title = 'RSI High Color', defval = #FF413B, inline = RSI_group, group = RSI_group)
+color rsilowclr = input.color(title = 'RSI Low Color', defval = #00fd7e, inline = RSI_group, group = RSI_group)
+color rsimidclr = input.color(title = 'RSI Mid Color', defval = #8AB5FF, inline = RSI_group, group = RSI_group)
+bool rsi_bg = input.bool(title = 'Add RSI colors to chart background', defval = true, group = RSI_group)
+
+var MACD_group =         '===================== MacD Settings ===================='
+macdsrc = input.source(title = 'MacD Source', defval = close, group = MACD_group)
+int macdfastlen = input.int(title = 'MacD Fast Length', defval = 12, minval = 1, group = MACD_group)
+int macdslowlen = input.int(title = 'MacD Slow Length', defval = 34, minval = 1, group = MACD_group)
+int macdsignallen = input.int(title = 'MacD Signal Smoothing', defval = 9, minval = 1, maxval = 50, group = MACD_group)
+color upmacd = input.color(title = 'MacD Cross Up', defval = #05011d, inline = MACD_group, group = MACD_group)
+color downmacd = input.color(title = 'MacD Cross Down', defval = #EF5350, inline = MACD_group, group = MACD_group)
+
+var iMACD_group =        '================ Impulse MacD Settings ================='
+impulse_src = input.source(title = 'Impulse MACD Source', defval = hlc3, group = iMACD_group)
+int impulse_len_MA = input.int(title = 'Impulse MACD MA Length', defval = 34, minval = 1, group = iMACD_group)
+int impulse_len_Signal = input.int(title = 'Impulse MACD Signal Length', defval = 9, minval = 1, group = iMACD_group)
+
+var ROC_group =          '===================== ROC Settings ====================='
+int rocPeriod = input.int(title = 'ROC Period', defval = 10, minval = 1, group = ROC_group)
+
+var zlsma_group =        '======= Zero Lag Squares Moving Average Settings ======='
+int zlsma_len = input.int(title = 'ZLSMA Length', defval = 32, minval = 1, group = zlsma_group)
+int zlsma_offset = input.int(title = 'ZLSMA Offset', defval = 0, minval = 0, group = zlsma_group)
+zlsma_src = input.source(title = 'ZLSMA Source', defval = close, group = zlsma_group)
+
+var market_group =       '======= Market Dominance and Performance Tickers ======='
+perf_ticker = input.symbol(title = 'Market Performance', defval = 'CMC200', group = market_group)
+dom_ticker = input.symbol(title = 'Dominance', defval = 'BTC.D', group = market_group)
+vol_ticker = input.symbol(title = 'Volatility', defval = 'VIX', group = market_group)
+
+var lookback_group =     '=============== Look Back Period Settings =============='
+int i_lookback = input.int(title = 'Statistics', defval = 100, minval = 1, inline = lookback_group, group = lookback_group)
+int p_lookback = input.int(title = 'Probability', defval = 100, minval = 1, inline = lookback_group, group = lookback_group)
+
+var alma_group =          '============== Golden Cross (ALMA 50 200) =============='
+fastalmasrc = input.source(title = 'Alma FMA Source', defval = close, group = alma_group)
+int fastalmalen = input.int(title = 'Alma FMA Length', defval = 50, minval = 1, group = alma_group)
+float fastalmaoff = input.float(title = 'Alma FMA Offset', defval = 0.85, minval = 0, group = alma_group)
+float fastalmasigma = input.float(title = 'Alma FMA Sigma', defval = 7.5, minval = 0, group = alma_group)
+slowalmasrc = input.source(title = 'Alma SMA Source', defval = close, group = alma_group)
+int slowalmalen = input.int(title = 'Alma SMA Length', defval = 200, minval = 1, group = alma_group)
+float slowalmaoff = input.float(title = 'Alma SMA Offset', defval = 0.85, minval = 0, group = alma_group)
+float slowalmasigma = input.float(title = 'Alma SMA Sigma', defval = 7.5, minval = 0, group = alma_group)
+color fastalmaclr = input.color(title = 'Fast Moving Alama Color', defval = #04F909, inline = alma_group, group = alma_group)
+color slowalmaclr = input.color(title = 'Slow Moving Alama Color', defval = #F90404, inline = alma_group, group = alma_group)
+color upalmacross = input.color(title = 'Alama Golden Cross', defval = #d9ff00, inline = alma_group, group = alma_group)
+color downalmacross = input.color(title = 'Alama Death Cross', defval = #000000, inline = alma_group, group = alma_group)
+
+bb_group =                '================ Bolinger Band Settings ================'
+int bb_length = input.int(title="Length", minval = 1, defval = 20, group = bb_group)
+bb_src = input.source(title="Source", defval = close, group = bb_group)
+float bb_mult = input.float(minval = 0.001, maxval = 50, defval = 2.0, title="StdDev Multiplier", group = bb_group)
+int bb_offset = input.int(minval = -500, defval = 0, maxval = 500, title="Offset", group = bb_group)
+color bb_basis_clr = input.color(title="Basis Line Color", defval = #FF6D00, inline=bb_group, group = bb_group)
+color bb_upper_clr = input.color(title="Upper Line Color", defval = #2962FF, inline=bb_group, group = bb_group)
+color bb_lower_clr = input.color(title="Lower Line Color", defval = #2962FF, inline=bb_group, group = bb_group)
+color bb_fill_clr = input.color(title="Fill Color", defval = color.rgb(33, 150, 243, 95), inline=bb_group, group = bb_group)
+
+var kelt_group =          '=============== Keltner Channel Settings ==============='
+int kelt_len = input.int(title = "Keltner Length", defval = 20, minval = 1, group = kelt_group)
+float kelt_mult = input.float(title = "Multiplier", defval = 2.0, group = kelt_group)
+int kelt_smooth = input.int(title = 'Basis Smoothing', defval = 2, options = [1,2,3,4,5], group = kelt_group)
+kelt_src = input.source(title="Source", defval = close, group = kelt_group)
+
+var gator_group =         '==================== Gator Settings ===================='
+gator_lips_src = input.source(title = 'Lips Source', defval = hl2, group = gator_group)
+int gator_lips_len = input.int(title = 'Lips Length', defval = 5, minval = 1, group = gator_group)
+int gator_lips_offset = input.int(title = 'Lips Length Offset', defval = 3, group = gator_group)
+gator_teeth_src = input.source(title = 'Teeth Source', defval = hl2, group = gator_group)
+int gator_teeth_len = input.int(title = 'Teeth Length', defval = 8, group = gator_group)
+int gator_teeth_offset = input.int(title = 'Teeth Length Offset', defval = 5, minval = 1, group = gator_group)
+gator_jaw_src = input.source(title = 'Jaw Source', defval = hl2, group = gator_group)
+int gator_jaw_len = input.int(title = 'Jaw Length', defval = 13, minval = 1, group = gator_group)
+int gator_jaw_offset = input.int(title = 'Jaw Length Offset', defval = 8, minval = 1, group = gator_group)
+color gator_lips_clr = input.color(title = 'Lips Color', defval = #49413c, inline = gator_group, group = gator_group)
+color gator_teeth_clr = input.color(title = 'Teeth Color', defval = #fff8f6, inline = gator_group, group = gator_group)
+color gator_jaw_clr = input.color(title = 'Jaw Color', defval = #9f9474, inline = gator_group, group = gator_group)
+color gator_top_shade = input.color(title = 'Shade Between Lips and Teeth', defval = #5d4a3b, inline = gator_group, group = gator_group)
+color gator_bottom_shade = input.color(title = 'Shade Between Teeth and Jaw', defval = #a09566, inline = gator_group, group = gator_group)
+
+var zlema_group =         '================ Zero Lag EMA Settings ================='
+int emaLength = input.int(title = 'EMA Zero Lag Length', defval = 10, minval = 1, group = zlema_group)
+
+var vwap_group =          '=============== ===== VWAP Settings ===================='
+bool hideonDWM = input.bool(false, title="Hide VWAP on 1D or Above", group = vwap_group)
+var anchor = input.string(defval = "Session", title="Anchor Period", options=["Session", "Week", "Month", "Quarter", "Year", "Decade", "Century", "Earnings", "Dividends", "Splits"], group = vwap_group)
+vwap_src = input.source(title = "Source", defval = hlc3, group = vwap_group)
+
+var cci_group =           '===================== CCI Settings ====================='
+ccisrc = input.source(title = 'CCI Source', defval = close, group = cci_group)
+int ccilen = input.int(title = 'CCI Length', defval = 20, minval = 1, group = cci_group)
+int cciob = input.int(title = 'CCI OverBought Level', defval = 100, minval = 1, group = cci_group)
+int ccios = input.int(title = 'CCI OverSold Level', defval = -100, minval = -300, group = cci_group)
+
+var mfi_group =           '============== Money Flow Index Settings ==============='
+mfisrc = input.source(title = 'MFI Source', defval = close, group = mfi_group)
+int mfilen = input.int(title = 'MFI Length', defval = 17, minval = 1, group = mfi_group) 
+int mfiob = input.int(title = 'MFI OverBought Level', defval = 80, minval = 1, group = mfi_group)
+int mfios = input.int(title = 'MFI OverSold Level', defval = 20, minval = 1, group = mfi_group)
+
+var adx_group =           '==================== ADX Settings ======================'
+int adxlen = input.int(title = 'ADX Length', minval = 1, defval = 14, group = adx_group)
+
+var emat_group =          '================== EMA Trend Catcher ==================='
+tc_fma_src = input.source(title = 'FMA Source', defval = close, group = emat_group)
+int tc_fma_len = input.int(title = 'FMA Length', defval = 21, minval = 1, group = emat_group)
+tc_sma_src = input.source(title = 'SMA Source', defval = close, group = emat_group)
+int tc_sma_len = input.int(title = 'SMA Length', defval = 50, minval = 1, group = emat_group)
+
+var tc_group =            '================== Super Trend Catcher ================='
+int atr_periods = input.int(title="ATR Periods", defval = 10, minval = 0, group = tc_group)
+atr_src = input.source(title="ATR Source", defval = hl2, group = tc_group)
+float atr_multiplier = input.float(title="ATR Multiplier", step=0.1, defval = 3.0, group = tc_group)
+bool change_atr = input.bool(title="Change ATR Calculation Method ?", defval = true, group = tc_group)
+
+var ema_r_group =         '================= EMA Ribbon Settings =================='
+ema_r_src = input.source(title = 'EMA Ribbon Source', defval = close, group = ema_r_group)
+int ema_r_1 = input.int(title = 'EMA Ribbon 1 Length', defval = 5, group = ema_r_group)
+int ema_r_2 = input.int(title = 'EMA Ribbon 2 Length', defval = 10, group = ema_r_group)
+int ema_r_3 = input.int(title = 'EMA Ribbon 3 Length', defval = 15, group = ema_r_group)
+int ema_r_4 = input.int(title = 'EMA Ribbon 4 Length', defval = 20, group = ema_r_group)
+int ema_r_5 = input.int(title = 'EMA Ribbon 5 Length', defval = 25, group = ema_r_group)
+int ema_r_6 = input.int(title = 'EMA Ribbon 6 Length', defval = 30, group = ema_r_group)
+int ema_r_7 = input.int(title = 'EMA Ribbon 7 Length', defval = 35, group = ema_r_group)
+int ema_r_8 = input.int(title = 'EMA Ribbon 8 Length', defval = 40, group = ema_r_group)
+int ema_r_9 = input.int(title = 'EMA Ribbon 9 Length', defval = 45, group = ema_r_group)
+int ema_r_10 = input.int(title = 'EMA Ribbon 10 Length', defval = 50, group = ema_r_group)
+int ema_r_11 = input.int(title = 'EMA Ribbon 11 Length', defval = 55, group = ema_r_group)
+int ema_r_12 = input.int(title = 'EMA Ribbon 12 Length', defval = 60, group = ema_r_group)
+int ema_r_13 = input.int(title = 'EMA Ribbon 13 Length', defval = 65, group = ema_r_group)
+int ema_r_14 = input.int(title = 'EMA Ribbon 14 Length', defval = 70, group = ema_r_group)
+int ema_r_15 = input.int(title = 'EMA Ribbon 15 Length', defval = 75, group = ema_r_group)
+int ema_r_16 = input.int(title = 'EMA Ribbon 16 Length', defval = 80, group = ema_r_group)
+
+// ************************************************************************************
+// Set Dark/Light Mode
+//
+// ************************************************************************************
+color darkMode = color.rgb(0, 0, 0, 0)
+color lightMode = color.rgb(255, 255, 255, 0)
+bgcolor(i_showDarkMode ? darkMode : lightMode)
+
+// ************************************************************************************
+// Fast/Slow exponential moving averages 
+// Default - (EMA 50) (EMA 200) (Golden Cross)
+// ************************************************************************************
+// Determine if we are using smoothing or not
+gcslow = gcslowsmooth ? smma(gcslowsrc, gcslowlen) : ta.ema(gcslowsrc, gcslowlen)
+gcfast = gcfastsmooth ? smma(gcfastsrc, gcfastlen) : ta.ema(gcfastsrc, gcfastlen)
+
+// Calculate if the EMA 50 has crossed up or down the EMA 200
+gc_cross = ta.cross(gcfast, gcslow) ? gcfast : na
+gc_crossover = ta.crossover(gcfast, gcslow)
+gc_crossunder = ta.crossunder(gcfast, gcslow)
+
+cross_clr = gc_crossover ? upgccross : gc_crossunder ? downgccross : na
+gcDir = gcfast > gcslow ? "Golden" : "Death"
+gc_since_up = ta.barssince(gc_crossover)
+gc_since_down = ta.barssince(gc_crossunder)
+
+gc_since = gcDir == "Golden" ? gc_since_up : gc_since_down
+
+// plot shapes and lines
+plot(i_showGCfma ? gcfast : na, color=color.new(gcfastlineclr, gcfasttransclr), linewidth=1, offset=gcfastoffset, title = 'Fast EMA')
+plot(i_showGCsma ? gcslow : na, color=color.new(gcslowlineclr, gcslowtransclr), linewidth=1, offset=gcslowoffset, title = 'Slow EMA')
+plotshape(i_showGCcross ? gc_cross : na, style=shape.cross, color=color.new(cross_clr, 0), size=size.small, location=location.absolute, title="EMA Golden Cross")
+
+// ************************************************************************************
+// Gather External Broker Stats 
+// Volume, RSI
+// ************************************************************************************
+// Calculate the Volume for each brokerage
+brokerage1_volume = symbol1 ? request.security(broker_1, timeframe.period, volume) : na
+brokerage2_volume = symbol2 ? request.security(broker_2, timeframe.period, volume) : na
+brokerage3_volume = symbol3 ? request.security(broker_3, timeframe.period, volume) : na
+brokerage4_volume = symbol4 ? request.security(broker_4, timeframe.period, volume) : na
+brokerage5_volume = symbol5 ? request.security(broker_5, timeframe.period, volume) : na
+
+// Calculate the average volume for each brokerage
+// Calculate the Volume for each brokerage
+brokerage1_avgvolume = symbol1 ? request.security(broker_1, timeframe.period, ta.sma(volume, i_lookback)) : na
+brokerage2_avgvolume = symbol2 ? request.security(broker_2, timeframe.period, ta.sma(volume, i_lookback)) : na
+brokerage3_avgvolume = symbol3 ? request.security(broker_3, timeframe.period, ta.sma(volume, i_lookback)) : na
+brokerage4_avgvolume = symbol4 ? request.security(broker_4, timeframe.period, ta.sma(volume, i_lookback)) : na
+brokerage5_avgvolume = symbol5 ? request.security(broker_5, timeframe.period, ta.sma(volume, i_lookback)) : na
+
+// Calculate RSI for each brokerage
+brokerage1_rsi = symbol1 ? request.security(broker_1, timeframe.period, ta.rsi(rsisrc, rsilen)) : na
+brokerage2_rsi = symbol2 ? request.security(broker_2, timeframe.period, ta.rsi(rsisrc, rsilen)) : na
+brokerage3_rsi = symbol3 ? request.security(broker_3, timeframe.period, ta.rsi(rsisrc, rsilen)) : na
+brokerage4_rsi = symbol4 ? request.security(broker_4, timeframe.period, ta.rsi(rsisrc, rsilen)) : na
+brokerage5_rsi = symbol5 ? request.security(broker_5, timeframe.period, ta.rsi(rsisrc, rsilen)) : na
+
+// Calculate CCI for each brokerage
+brokerage1_cci = symbol1 ? request.security(broker_1, timeframe.period, ta.cci(ccisrc, ccilen)) : na
+brokerage2_cci = symbol2 ? request.security(broker_2, timeframe.period, ta.cci(ccisrc, ccilen)) : na
+brokerage3_cci = symbol3 ? request.security(broker_3, timeframe.period, ta.cci(ccisrc, ccilen)) : na
+brokerage4_cci = symbol4 ? request.security(broker_4, timeframe.period, ta.cci(ccisrc, ccilen)) : na
+brokerage5_cci = symbol5 ? request.security(broker_5, timeframe.period, ta.cci(ccisrc, ccilen)) : na
+
+// Calculate MFI for each brokerage
+brokerage1_mfi = symbol1 ? request.security(broker_1, timeframe.period, ta.mfi(mfisrc, mfilen)) : na
+brokerage2_mfi = symbol2 ? request.security(broker_2, timeframe.period, ta.mfi(mfisrc, mfilen)) : na
+brokerage3_mfi = symbol3 ? request.security(broker_3, timeframe.period, ta.mfi(mfisrc, mfilen)) : na
+brokerage4_mfi = symbol4 ? request.security(broker_4, timeframe.period, ta.mfi(mfisrc, mfilen)) : na
+brokerage5_mfi = symbol5 ? request.security(broker_5, timeframe.period, ta.mfi(mfisrc, mfilen)) : na
+
+combined_vol_val = 0.0000000000
+combined_rsi_val = 0.0000000000
+combined_cci_val = 0.0000000000
+combined_mfi_val = 0.0000000000
+combined_avg_vol = 0.0000000000
+symCount = 0
+
+volume_ratio = 1.0000000000
+if brokerage1_volume_divbyclose
+    volume_ratio := close
+if symbol1
+    combined_vol_val := combined_vol_val + (brokerage1_volume / volume_ratio)
+    combined_avg_vol := combined_avg_vol + (brokerage1_avgvolume / volume_ratio)
+    combined_rsi_val := combined_rsi_val + brokerage1_rsi
+    combined_cci_val := combined_cci_val + brokerage1_cci
+    combined_mfi_val := combined_mfi_val + brokerage1_mfi
+    symCount := symCount + 1
+    volume_ratio := 1.0000000000
+    
+if brokerage2_volume_divbyclose
+    volume_ratio := close
+if symbol2
+    combined_vol_val := combined_vol_val + (brokerage2_volume / volume_ratio)
+    combined_avg_vol := combined_avg_vol + (brokerage2_avgvolume / volume_ratio)
+    combined_rsi_val := combined_rsi_val + brokerage2_rsi
+    combined_cci_val := combined_cci_val + brokerage2_cci
+    combined_mfi_val := combined_mfi_val + brokerage2_mfi
+    symCount := symCount + 1
+    volume_ratio := 1.0000000000
+
+if brokerage3_volume_divbyclose
+    volume_ratio := close
+if symbol3
+    combined_vol_val := combined_vol_val + (brokerage3_volume / volume_ratio)
+    combined_avg_vol := combined_avg_vol + (brokerage3_avgvolume / volume_ratio)
+    combined_rsi_val := combined_rsi_val + brokerage3_rsi
+    combined_cci_val := combined_cci_val + brokerage3_cci
+    combined_mfi_val := combined_mfi_val + brokerage3_mfi
+    symCount := symCount + 1
+    volume_ratio := 1.0000000000
+    
+if brokerage4_volume_divbyclose
+    volume_ratio := close
+if symbol4
+    combined_vol_val := combined_vol_val + (brokerage4_volume / volume_ratio)
+    combined_avg_vol := combined_avg_vol + (brokerage4_avgvolume / volume_ratio)
+    combined_rsi_val := combined_rsi_val + brokerage4_rsi
+    combined_cci_val := combined_cci_val + brokerage4_cci
+    combined_mfi_val := combined_mfi_val + brokerage4_mfi
+    symCount := symCount + 1
+    volume_ratio := 1.0000000000
+    
+if brokerage5_volume_divbyclose
+    volume_ratio := close
+if symbol5
+    combined_vol_val := combined_vol_val + (brokerage5_volume / volume_ratio)
+    combined_avg_vol := combined_avg_vol + (brokerage5_avgvolume / volume_ratio)
+    combined_rsi_val := combined_rsi_val + brokerage5_rsi
+    combined_cci_val := combined_cci_val + brokerage5_cci
+    combined_mfi_val := combined_mfi_val + brokerage5_mfi
+    symCount := symCount + 1
+    volume_ratio := 1.0000000000
+
+combined_rsi_val := combined_rsi_val / symCount
+combined_cci_val := combined_cci_val / symCount
+combined_mfi_val := combined_mfi_val / symCount
+
+// ************************************************************************************
+// Get value of Shorts and Longs
+//
+// ************************************************************************************
+shorts = math.pow(request.security(short_broker, timeframe.period, close), 1)
+longs = math.pow(request.security(long_broker, timeframe.period, close), 1)
+
+// ************************************************************************************
+// Pi Top/Bottom 
+// Default - (EMA 150) (MA 471) (Golden Cross)
+// ************************************************************************************
+piSlow = request.security(syminfo.tickerid, pi_resolution, ta.sma(close, pislowlen) * 0.745)
+piFast = request.security(syminfo.tickerid, pi_resolution, ta.ema(close, pifastlen))
+pi_src = request.security(syminfo.tickerid, pi_resolution, close)
+
+piTop = ta.crossover(piSlow, piFast) ? pi_src + (pi_src / 100 * 10) : na
+piBottom = ta.crossover(piFast, piSlow) ? pi_src + (pi_src/100 * 10) : na
+piState = piFast > piSlow ? 'Golden' : 'Death'
+
+pi_since_up = ta.barssince(piBottom)
+pi_since_down = ta.barssince(piTop)
+
+pi_since = piState == "Golden" ? pi_since_up : pi_since_down
+
+// Need to find a way around max  of 64 plots
+//plotshape(piTop, style=shape.labeldown,size=size.normal, text="Bottom Begin", color=color.rgb(0, 255, 81), textcolor=color.white, location=location.absolute)
+//plotshape(piBottom, style=shape.labeldown,size=size.normal, text="Bottom Over", color=color.rgb(0, 255, 81), textcolor=color.white, location=location.absolute)
+plot(i_showPi ? piSlow : na, color = piSlowclr, title = "Pi Slow Moving Average")
+plot(i_showPi ? piFast : na, color = piFastclr, title = "Pi Fast Moving Average")
+
+// ************************************************************************************
+// ALMA Cross
+// Default - (ALAMA 50) (ALMA 200)
+// ************************************************************************************
+fastalma = ta.alma(fastalmasrc, fastalmalen, fastalmaoff, fastalmasigma)
+slowalma = ta.alma(slowalmasrc, slowalmalen, slowalmaoff, slowalmasigma)
+
+alma_cross = ta.cross(fastalma, slowalma) ? fastalma : na
+alma_crossover = ta.crossover(fastalma, slowalma)
+alma_crossunder = ta.crossunder(fastalma, slowalma)
+
+almaclr = alma_crossover ? upalmacross : alma_crossunder ? downalmacross : na
+alma_dir = fastalma > slowalma ? "Golden" : "Death"
+
+alma_since_up = ta.barssince(alma_crossover)
+alma_since_down = ta.barssince(alma_crossunder)
+
+alma_since = alma_dir == "Golden" ? alma_since_up : alma_since_down
+
+plot(i_showALMA ? fastalma : na, color=color.new(fastalmaclr, 0), linewidth=2, title = 'Fast ALMA')
+plot(i_showALMA ? slowalma : na, color=color.new(slowalmaclr, 0), linewidth=2, title = 'Slow ALMA')
+plotshape(i_showALMAcross ? alma_cross : na, style=shape.cross, color=color.new(almaclr, 0), size=size.tiny, location=location.absolute, title="ALMA Golden Cross")
+
+// ************************************************************************************
+// Calculate if the RSI is high or low
+// Modified version of rsi function from https://zenandtheartoftrading.com/pinescript/generate-trading-signals-with-rsi/
+// ************************************************************************************
+rsival = ta.rsi(rsisrc, rsilen)
+rsival := symbol1 or symbol2 or symbol3 or symbol4 or symbol5 ? (rsival + combined_rsi_val) / 2 : rsival
+is_rsi_ob = rsival >= rsiob
+is_rsi_os = rsival <= rsios
+
+rsi_mid_range_top = rsiob - rsios
+perc_1 = perc(100 - rsival, 100 - rsiob)         // Over Bought Transparency
+perc_2 = perc(rsival, rsios)                     // Over Sold Transparency
+perc_3 = perc(rsiob - rsival, rsi_mid_range_top) // Mid-Range Transparency
+
+rsi_transp = is_rsi_ob ? perc_1 : is_rsi_os ? perc_2 : perc_3
+
+rsiclr = is_rsi_ob ? rsihighclr : is_rsi_os ? rsilowclr : rsimidclr
+bgcolor(rsi_bg ? color.new(rsiclr, rsi_transp) : na)
+
+rsi_up_fast = ta.rma(math.max(ta.change(rsi_fast_src), 0), rsi_len_fast)
+rsi_down_fast = ta.rma(-math.min(ta.change(rsi_fast_src), 0), rsi_len_fast)
+rsi_fast = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - (100 / (1 + rsi_up_fast / rsi_down_fast))
+rsi_up_slow = ta.rma(math.max(ta.change(rsisrc), 0), rsilen)
+rsi_down_slow = ta.rma(-math.min(ta.change(rsisrc), 0), rsilen)
+rsi_slow = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - (100 / (1 + rsi_up_slow / rsi_down_slow))
+
+divergence = rsi_fast - rsi_slow
+rsi_since = ta.barssince(ta.cross(rsi_fast, rsi_slow))
+
+rsi_div = divergence > 0 ? 'Bullish' : divergence < 0 ? 'Bearish' : 'Neutral'
+
+// Stochastic RSI Values
+k = smma(ta.stoch(close, high, low, periodK), smoothK)
+d = smma(k, smoothD)
+
+// ************************************************************************************
+// Zero Lag SMA
+// Default - 
+// ************************************************************************************
+lsma = ta.linreg(zlsma_src, zlsma_len, zlsma_offset)
+lsma2 = ta.linreg(lsma, zlsma_len, zlsma_offset)
+zeq = lsma - lsma2
+zlsma = lsma + zeq
+plot(i_showZLSMA ? zlsma : na, color=color.new(color.yellow, 0), linewidth=3, title = "ZLSMA")
+
+// ************************************************************************************
+// Support and Resistance
+// Default - REMOVED IN VERSION 1153
+// ************************************************************************************
+
+// ************************************************************************************
+// Zero Lag EMA
+// Default - 
+// ************************************************************************************
+// Calculate the smoothing factor
+alpha = 2 / (emaLength + 1)
+
+// Define the variable to store the zero lag EMA
+var float emaZeroLag = na
+
+// Calculate the zero lag EMA
+emaZeroLag := alpha * (close - request.security(syminfo.tickerid, timeframe.period, ta.ema(close, emaLength))) + request.security(syminfo.tickerid, timeframe.period, ta.ema(close, emaLength))
+
+// Plot the zero lag EMA
+plot(i_showZema ? emaZeroLag : na, color=color.new(color.green, 0), linewidth=2, title = 'Zero Lag EMA')
+
+// ************************************************************************************
+// MacD Cross
+// Default - (EMA 12) (EMA 34) (SMA 9)
+// ************************************************************************************
+fastavg = ta.ema(macdsrc, macdfastlen)
+slowavg = ta.ema(macdsrc, macdslowlen)
+macd = fastavg - slowavg
+macdsignal = ta.sma(macd, macdsignallen)
+cross_3 = ta.cross(macdsignal, macd)
+macdata = cross_3 ? macdsignal : na
+crossover_3 = ta.crossover(macdsignal, macd)
+crossunder_3 = ta.crossunder(macdsignal, macd)
+
+macddir = crossover_3 ? 'down' : crossunder_3 ? 'up' : na
+
+macdclr = macddir == 'down' ? downmacd : macddir == 'up' ? upmacd : na
+
+macd_since = ta.barssince(ta.cross(macdsignal, macd))
+
+[macdb, macdsignalb, macdhist] = ta.macd(close, macdfastlen, macdslowlen, macdsignallen)
+trend = macdhist > 0 ? 'Bullish' : 'Bearish'
+
+macd_loc = macddir == 'up' ? "location.abovebar" : "location.belowbar"
+
+plotshape(i_showMACDcross ? macdata : na, style=shape.circle, color=color.new(macdclr, 0), size=size.tiny, location=location.abovebar, title = "MacD Cross")
+
+// ************************************************************************************
+// Impulse MacD
+// Default - (SMMA 34) (SMMA 9)
+// ************************************************************************************
+hi = smma(high, impulse_len_MA)
+lo = smma(low, impulse_len_MA)
+mi = calc_zlema(impulse_src, impulse_len_MA)
+md = mi > hi ? mi - hi : mi < lo ? mi - lo : 0
+sb = ta.sma(md, impulse_len_Signal)
+sh = md - sb
+
+// Add the impulse_trend variable and assign "up" or "down"
+impulse_trend = impulse_src > mi ? 'Bullish' : 'Bearish'
+
+impulse_since = ta.barssince(ta.cross(impulse_src, mi))
+
+// ************************************************************************************
+// EMA Trend
+// Default - (EMA 21) (EMA 50)
+// ************************************************************************************
+trend_dir_fma = ta.ema(tc_fma_src, tc_fma_len)
+trend_dir_sma = ta.ema(tc_sma_src, tc_sma_len)
+trend_dir = trend_dir_fma > trend_dir_sma ? "Up" : "Down"
+
+trend_since_up = ta.barssince(ta.crossover(trend_dir_fma, trend_dir_sma))
+trend_since_down = ta.barssince(ta.crossunder(trend_dir_fma, trend_dir_sma))
+
+trend_since = trend_dir == "Up" ? trend_since_up : trend_since_down
+
+atr2 = ta.sma(ta.tr, atr_periods)
+atr = change_atr ? ta.atr(atr_periods) : atr2
+up = atr_src - atr_multiplier * atr
+up1 = nz(up[1],up)
+up := close[1] > up1 ? math.max(up, up1) : up
+dn = atr_src + atr_multiplier * atr
+dn1 = nz(dn[1], dn)
+dn := close[1] < dn1 ? math.min(dn, dn1) : dn
+
+trendCatcher = 1
+trendCatcher := nz(trendCatcher[1], trendCatcher)
+trendCatcher := trendCatcher == -1 and close > dn1 ? 1 : trendCatcher == 1 and close < up1 ? -1 : trendCatcher
+plot(trendCatcher == 1 ? up : na, title="Up Trend", style=plot.style_linebr, linewidth=2, color=color.green)
+plot(trendCatcher == 1 ? na : dn, title="Down Trend", style=plot.style_linebr, linewidth=2, color=color.red)
+
+plot(i_showEmaTrend ? trend_dir_fma : na, title = 'EMA Trend FMA', color=color.yellow, style=plot.style_line, linewidth=2)
+plot(i_showEmaTrend ? trend_dir_sma : na, title = 'EMA Trend SMA', color=color.black, style=plot.style_line, linewidth=2)
+// ************************************************************************************
+// Candle Close Possibilities
+// Default - (CLOSE 100)
+// ************************************************************************************
+higherCloses = 0
+lowerCloses = 0
+
+for i = 1 to p_lookback by 1
+    if close[i] > close[i + 1]
+        higherCloses += 1
+        higherCloses
+    else if close[i] < close[i + 1]
+        lowerCloses += 1
+        lowerCloses
+
+higherCloseProbability = higherCloses / p_lookback * 100
+lowerCloseProbability = lowerCloses / p_lookback * 100
+
+// ************************************************************************************
+// Rounded - STDEV, MEAN, MAX, MIN
+// Default - (STDEV 100) MEAN(100) MAX(100) MIN(100)
+// ************************************************************************************
+std = ta.stdev(close, i_lookback)
+rounded_std = math.round(std * 100) / 100
+mean = ta.median(close, i_lookback)
+rounded_mean = math.round(mean * 100) / 100
+max = ta.highest(high, i_lookback)
+rounded_max = math.round(max * 100) / 100
+min = ta.lowest(low, i_lookback)
+rounded_min = math.round(min * 100) / 100
+
+// ************************************************************************************
+// Bollinger Bands
+// 
+// ************************************************************************************
+// Calculate Bollinger Bands
+bb_basis = ta.sma(bb_src, bb_length)
+bb_width = ta.stdev(bb_src, bb_length) * bb_mult
+upper = bb_basis + bb_width
+lower = bb_basis - bb_width
+
+bb_upper = plot(i_showBB ? upper : na, "Bollinger Upper Band", color=bb_upper_clr, offset = bb_offset)
+basis = plot(i_showBB ? bb_basis : na, "Bollinger Basis", color=bb_basis_clr, offset = bb_offset)
+bb_lower = plot(i_showBB ? lower : na, "Bollinger Lower Band", color=bb_lower_clr, offset = bb_offset)
+fill(bb_upper, bb_lower, title = "Bollinger Fill Background", color=bb_fill_clr)
+
+// ************************************************************************************
+// Keltner Channel
+//
+// ************************************************************************************
+kelt_basis = smma(ta.ema(kelt_src, kelt_len), kelt_smooth)
+rangema = atr
+kelt_upper = kelt_basis + atr * kelt_mult //smma(kelt_basis + atr * kelt_mult, kelt_smooth)
+kelt_lower = kelt_basis - atr * kelt_mult //smma(kelt_basis - atr * kelt_mult, kelt_smooth)
+kc_u = plot(i_showKC ? kelt_upper : na, color=#2962FF, title="Keltner Upper Band")
+kc_b = plot(i_showKC ? kelt_basis : na, color=#2962FF, title="Keltner Basis")
+kc_l = plot(i_showKC ? kelt_lower : na, color=#2962FF, title="Keltner Lower Band")
+fill(kc_u, kc_l, color=color.rgb(33, 150, 243, 95), title="Keltner Fill Background")
+
+// ************************************************************************************
+// Zero Lag Channel
+//
+// ************************************************************************************
+zero_basis = smma(ta.ema(close, 50), 2)
+zero_upper = zero_basis + smma(atr, 24) * 2
+zero_lower = zero_basis - smma(atr, 24) * 2
+plot(i_showZema ? zero_upper : na, color = #ffffff, title = "Zero Lag Upper Band")
+plot(i_showZema ? zero_basis : na, color = #ff0000, title = "Zero Lag Basis")
+plot(i_showZema ? zero_lower : na, color = #ffffff, title = "Zero Lag Lower Band")
+
+// ************************************************************************************
+// Momentum, CCI and MFI
+// Default - (MOMENTUM) (CCI 20) (MFI 5) (roc) 
+// ************************************************************************************
+roc = ta.roc(close, rocPeriod) // ROC Rate of Change
+momentum = (rsival + roc) / 2 
+cci = symbol1 or symbol2 or symbol3 or symbol4 or symbol5 ? (ta.cci(ccisrc, ccilen) + combined_cci_val) / 2 : ta.cci(ccisrc, ccilen) // CCI Commodities Channel Index - 100+ = Over Bought -100- = Over Sold
+mfi = symbol1 or symbol2 or symbol3 or symbol4 or symbol5 ? (ta.mfi(mfisrc, mfilen) + combined_mfi_val) / 2 : ta.mfi(mfisrc, mfilen) // MFI Money Flow Index - 80+ = Over Bought 20- = Over Sold
+
+// ************************************************************************************
+// Market Volatility (ATR), Performance and Dominance 
+// Default - (ATR 10) (CMC200) (BTC.D)
+// ************************************************************************************
+market_performance = request.security(perf_ticker, 'D', close)
+BTC_dominance = request.security(dom_ticker, 'D', close)
+volatility = request.security(vol_ticker, 'D', close)
+momentum_norm = normalize(momentum, 0, 10)
+volatility_norm = normalize(volatility, 0, 10)
+performance_norm = normalize(market_performance, 0, 10)
+
+// ************************************************************************************
+// Fear and Greed 
+// Default - momentum, volatility and performance normalized
+// ************************************************************************************
+fear_and_greed = (momentum_norm + 1 - volatility_norm + performance_norm)
+
+// ************************************************************************************
+// COG
+// The cog (center of gravity) is an indicator based on statistics and the Fibonacci golden ratio.
+// ************************************************************************************
+cog = ta.cog(cog_src, cog_len)
+trigger = ta.alma(cog, windowsize, offset, sigma)
+// ************************************************************************************
+// Stop Loss / Take Profit Calculations 
+// Default - 
+// ************************************************************************************
+rounded_atr = math.round(atr * 100) / 100
+rounded_volume = (math.round(volume)) + (math.round(combined_vol_val ))
+long_sl = close - atr * stopLoss
+short_sl = close + atr * stopLoss
+rounded_long_sl = math.round(long_sl * 100) / 100
+rounded_short_sl = math.round(short_sl * 100) / 100
+long_tp = close + atr * takeProfit
+short_tp = close - atr * takeProfit
+rounded_long_tp = math.round(long_tp * 100) / 100
+rounded_short_tp = math.round(short_tp * 100) / 100
+avgVol = (ta.sma(volume, i_lookback) + combined_avg_vol)
+rounded_avgVol = math.round(avgVol)
+
+// ************************************************************************************
+// VWAP 
+// Default - 
+// ************************************************************************************
+new_earnings = request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_dividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+new_split = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+
+isNewPeriod = switch anchor
+	"Earnings"  => not na(new_earnings)
+	"Dividends" => not na(new_dividends)
+	"Splits"    => not na(new_split)
+	"Session"   => timeframe.change("D")
+	"Week"      => timeframe.change("W")
+	"Month"     => timeframe.change("M")
+	"Quarter"   => timeframe.change("3M")
+	"Year"      => timeframe.change("12M")
+	"Decade"    => timeframe.change("12M") and year % 10 == 0
+	"Century"   => timeframe.change("12M") and year % 100 == 0
+	=> false
+
+isEsdAnchor = anchor == "Earnings" or anchor == "Dividends" or anchor == "Splits"
+if na(vwap_src[1]) and not isEsdAnchor
+	isNewPeriod := true
+
+float vwap = na
+
+if not (hideonDWM and timeframe.isdwm)
+    [_vwap, _stdevUpper, _] = ta.vwap(vwap_src, isNewPeriod, 1)
+	vwap := _vwap
+
+// ************************************************************************************
+// Calculate the gator
+// Modified version of the Williams Alligator
+
+gator_lips = smma(gator_lips_src, gator_lips_len)
+gator_teeth = smma(gator_teeth_src, gator_teeth_len)
+gator_jaw = smma(gator_jaw_src, gator_jaw_len)
+
+lips = plot(i_showGator ? gator_lips : na, color=color.new(gator_lips_clr, 0), linewidth=2, offset=gator_lips_offset, title = "Gator Lips")
+teeth = plot(i_showGator ? gator_teeth : na, color=color.new(gator_teeth_clr, 0), linewidth=2, offset=gator_teeth_offset, title = "Gator Teeth")
+jaw = plot(i_showGator ? gator_jaw : na, color=color.new(gator_jaw_clr, 0), linewidth=2, offset=gator_jaw_offset, title = "Gator Jaw")
+
+// Use fill() with invisible plots
+fill(lips, teeth, color=color.new(gator_top_shade, 75))
+fill(teeth, jaw, color=color.new(gator_bottom_shade, 75))
+
+// ************************************************************************************
+// ADX
+// Default - 
+// ************************************************************************************
+tr = math.max(math.max(high-low, math.abs(high-nz(close[1]))), math.abs(low-nz(close[1])))
+dmPlus = high-nz(high[1]) > nz(low[1])-low ? math.max(high-nz(high[1]), 0): 0
+dmMinus = nz(low[1])-low > high-nz(high[1]) ? math.max(nz(low[1])-low, 0): 0
+
+str = 0.0
+str := nz(str[1]) - (nz(str[1])/adxlen) + tr
+
+sdmPlus = 0.0
+sdmPlus := nz(sdmPlus[1]) - (nz(sdmPlus[1])/adxlen) + dmPlus
+
+sdmMinus = 0.0
+sdmMinus := nz(sdmMinus[1]) - (nz(sdmMinus[1])/adxlen) + dmMinus
+
+DIPlus = sdmPlus / str * 100
+DIMinus = sdmMinus / str * 100
+dx = math.abs(DIPlus-DIMinus) / (DIPlus+DIMinus)*100
+adx = ta.sma(dx, adxlen)
+
+adx_dir = DIPlus > DIMinus ? "Up" : "Down"
+minus_cross = ta.crossover(DIMinus, DIPlus)
+plus_cross = ta.crossover(DIPlus, DIMinus)
+
+adx_since_up = ta.barssince(plus_cross)
+adx_since_down = ta.barssince(minus_cross)
+
+adx_since_trend = adx_dir == "Up" ? adx_since_up : adx_since_down
+
+adx_signal = ""
+adx_since = 0
+
+if adx < 25 and adx_dir == "Up"
+    adx_since := adx_dir == "Up" ? adx_since_up : adx_since_down
+    adx_signal :=  "Buy"
+else if adx < 25 and adx_dir == "Down"
+    adx_since := adx_dir == "Down" ? adx_since_down : adx_since_up
+    adx_signal :=  "Sell"
+else 
+    adx_signal := "Hold"
+    adx_since := 0
+
+trend_strength = adx <= 25 ? 'Ranging' : adx > 25 and adx <= 50 ? 'Trending' : adx > 50 and adx <= 75 ? 'Very Strong' : 'Power Trend' 
+// *****************************************************************************
+// EMA Ribbon
+// lengths
+// REMOVED IN VERSION 1153
+// IN A SEPARATE INDICATOR - EMA CLOUD
+
+
+// ************************************************************************************
+// CCI Strategy
+// Default - 
+// ************************************************************************************
+cci_buy_signal = ta.crossover(cci, cciob) ? 1 : -1
+cci_sell_signal = ta.crossunder(cci, ccios) ? 1 : -1
+// ************************************************************************************
+// MFI Strategy
+// Default - 
+// ************************************************************************************
+mfi_buy_signal = ta.crossover(mfi, mfiob) ? 1 : -1
+mfi_sell_signal = ta.crossunder(mfi, mfios) ? 1 : -1
+// ************************************************************************************
+// RSI Strategy
+//
+// ************************************************************************************
+rsi_buy_signal = rsival <= 25 and rsival[1] <= 25 and rsival[2] <= 25 ? true : false
+rsi_sell_signal = rsival >= 80 and rsival[1] >= 80 and rsival[2] >= 80 and rsival[3] >= 80 ? true : false
+// ************************************************************************************
+// Trend Strategy
+//
+// ************************************************************************************
+trend_buy_signal = trend_dir_fma <= trend_dir_sma ? 1 : -1
+trend_sell_signal = trend_dir_fma >= trend_dir_sma ? 1 : -1
+// ************************************************************************************
+// Stochastic Strategy
+//
+// ************************************************************************************
+stoch_buy_signal = k <= 20 ? 1 : -1
+stoch_sell_signal = d >= 80 ? 1 : -1
+
+// ************************************************************************************
+// Configure Data Dashboard 
+// Default - 
+// ************************************************************************************
+
+var table_position = dash_loc == 'Top Left' ? position.top_left :  dash_loc == 'Bottom Left' ? position.bottom_left :  dash_loc == 'Top Right' ? position.top_right : position.bottom_right
+var table_text_size = text_size == 'Tiny' ? size.tiny :  text_size == 'Small' ? size.small :  text_size == 'Normal' ? size.normal : size.large
+var DashBoard = table.new(position = table_position, columns = 2, rows = 41, bgcolor = dashboard_bgcolor, frame_color = txt_col, frame_width=1, border_color = txt_col, border_width = 1)
+nl = ' '
+if barstate.islast
+    table.cell_set_text_halign(DashBoard, 0, 1, text.align_center)
+    table.cell_set_text_halign(DashBoard, 1, 1, text.align_center)
+    table.cell_set_text_valign(DashBoard, 0, 1, text.align_center)
+    table.cell_set_text_valign(DashBoard, 1, 1, text.align_center)
+    table.cell(DashBoard, 0, 1,'STATISTICS', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.merge_cells(DashBoard, 0, 1, 1, 1)
+    table.cell(DashBoard, 1, 1,'', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.cell(DashBoard, 0, 2, format_indicator_info('STDEV', i_lookback), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 2, format_string('', format_currency(rounded_std), nl), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 3, 'Avg.', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 3, format_string('', format_currency(rounded_mean), nl), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 4, 'High', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 4, format_string('', format_currency(rounded_max), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 5, 'Low', text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 5, format_string('', format_currency(rounded_min), nl), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 6, 'Shorts', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 6, format_string('', format_number(shorts), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 7, 'Longs', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 7, format_string('', format_number(longs), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell_set_text_halign(DashBoard, 0, 8, text.align_center)
+    table.cell_set_text_halign(DashBoard, 1, 8, text.align_center)
+    table.cell_set_text_valign(DashBoard, 0, 8, text.align_center)
+    table.cell_set_text_valign(DashBoard, 1, 8, text.align_center)
+    table.cell(DashBoard, 0, 8, 'INDICATORS', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.merge_cells(DashBoard, 0, 8, 1, 8)
+    table.cell(DashBoard, 1, 8, '', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.cell(DashBoard, 0, 9, format_indicator_info('RSI', rsilen), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 9, f_strHelp('', rsival, 1, nl), bgcolor = indicator_status_color(rsival, rsiob, rsios), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 10, format_indicator_info('Stoch K', smoothK), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 10, f_strHelp('', k, 1, nl), bgcolor = indicator_status_color(k, 80, 20), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 11, format_indicator_info('Stoch D', smoothD), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 11, f_strHelp('', d, 1, nl), bgcolor = indicator_status_color(d, 80, 20), text_color = txt_col, text_size = table_text_size)   
+    table.cell(DashBoard, 0, 12, format_indicator_info('CCI', ccilen), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 12, f_strHelp('', cci, 1, nl), bgcolor = indicator_status_color(cci, 100, -100), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 13, format_indicator_info('MFI', rocPeriod), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 13, f_strHelp('', mfi, 1, nl), bgcolor=indicator_status_color(mfi, 80, 20), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 14, format_indicator_info('ADX', adxlen), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 14, f_strHelp('', adx, 1, nl), bgcolor = indicator_status_color(adx, 50, 20), text_color = txt_col, text_size = table_text_size)    
+    table.cell(DashBoard, 0, 15, format_indicator_info('ROC', mfilen), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 15, f_strHelp('', roc, 2, nl), bgcolor = indicator_status_color(mfi, 80, 20), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 16, format_indicator_info('ATR', atr_periods), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 16, f_strHelp('', rounded_atr, -1, nl), text_color = txt_col, text_size = table_text_size)     
+    table.cell(DashBoard, 0, 17, 'MOM', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 17, f_strHelp('', (momentum + adx) / 2, 1, nl), bgcolor = indicator_status_color((momentum + adx) / 2, 70, 30), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 18, format_indicator_info('VWAP', anchor), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 18, format_string('', format_currency(vwap), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 19, format_indicator_info('COG', cog_len), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 19, f_strHelp('', trigger, 4, nl), bgcolor = indicator_status_color(cog, 0.1, -0.1), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 20, 'Fear & Greed', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 20, f_strHelp('', fear_and_greed, 1, nl),  bgcolor = indicator_status_color(fear_and_greed, 70, 30), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 21, 'BTC Dominance', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 21, f_strHelp('', BTC_dominance, 1, nl), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 22, 'Volatility', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 22, f_strHelp('', volatility, 1, nl), bgcolor = indicator_status_color(volatility, 20, 30), text_color = txt_col, text_size = table_text_size)
+    table.cell_set_text_halign(DashBoard, 0, 23, text.align_center)
+    table.cell_set_text_halign(DashBoard, 1, 23, text.align_center)
+    table.cell_set_text_valign(DashBoard, 0, 23, text.align_center)
+    table.cell_set_text_valign(DashBoard, 1, 23, text.align_center) 
+    table.cell(DashBoard, 0, 23, 'VOLUME', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.merge_cells(DashBoard, 0, 23, 1, 23)
+    table.cell(DashBoard, 1, 23, '', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.cell(DashBoard, 0, 24, 'Volume', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 24, format_string('', format_number(rounded_volume), nl), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 25, 'Average Volume', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 25, format_string('', format_number(rounded_avgVol), nl), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 26, 'Short SL', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 26, format_string('', format_currency(rounded_short_sl), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 27, 'Short TP', text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 27, format_string('', format_currency(rounded_short_tp), nl), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 28, 'Long SL', text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 1, 28, format_string('', format_currency(rounded_long_sl), nl), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 29, 'Long TP', text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 29, format_string('', format_currency(rounded_long_tp), nl), text_color = txt_col, text_size = table_text_size)
+    table.cell_set_text_halign(DashBoard, 0, 30, text.align_center)
+    table.cell_set_text_halign(DashBoard, 1, 30, text.align_center)
+    table.cell_set_text_valign(DashBoard, 0, 30, text.align_center)
+    table.cell_set_text_valign(DashBoard, 1, 30, text.align_center)
+    table.cell(DashBoard, 0, 30, 'SIGNALS', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.merge_cells(DashBoard, 0, 30, 1, 30)
+    table.cell(DashBoard, 1, 30, '', text_color=dashboard_hd_txt , bgcolor=dashboard_hd_bgcolor, text_size=table_text_size)
+    table.cell(DashBoard, 0, 31, format_signal_info('RSI Div', rsi_len_fast, rsilen), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 31, format_indicator_info(rsi_div, rsi_since), bgcolor = dashboard_cell_color(rsi_div, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 32, format_signal_info('Impulse MacD', impulse_len_MA, impulse_len_Signal), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 32, format_indicator_info(impulse_trend, impulse_since), bgcolor = dashboard_cell_color(impulse_trend, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 0, 33, format_signal_info('MacD', macdfastlen, macdslowlen), text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 1, 33, format_indicator_info(trend, macd_since), bgcolor = dashboard_cell_color(trend, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 34, format_signal_info('EMA Trend', tc_fma_len, tc_sma_len), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 34, format_indicator_info(trend_dir, trend_since), bgcolor = dashboard_cell_color(trend_dir, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 35, format_indicator_info('ADX Trend', adxlen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 35, format_indicator_info(adx_dir, adx_since_trend), bgcolor = dashboard_cell_color(adx_dir, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 36, format_indicator_info('Trend Strength', adxlen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 36, format_string('', trend_strength, nl), bgcolor = dashboard_cell_color(adx_dir, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 37, format_indicator_info('ADX Signal', adxlen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 37, format_indicator_info(adx_signal, adx_since), bgcolor = dashboard_cell_color(adx_signal, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)
+    table.cell(DashBoard, 0, 38, format_signal_info('Cross ALMA', fastalmalen, slowalmalen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 38, format_indicator_info(alma_dir, alma_since), bgcolor = dashboard_cell_color(alma_dir, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor),text_color = txt_col, text_size = table_text_size)    
+    table.cell(DashBoard, 0, 39, format_signal_info('Cross EMA', gcfastlen, gcslowlen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 39, format_indicator_info(gcDir, gc_since), bgcolor = dashboard_cell_color(gcDir, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor), text_color = txt_col, text_size = table_text_size)  
+    table.cell(DashBoard, 0, 40, format_signal_info('Cross Pi', pifastlen, pislowlen), text_color = txt_col, text_size = table_text_size) 
+    table.cell(DashBoard, 1, 40, format_indicator_info(piState, pi_since), bgcolor = dashboard_cell_color(piState, dashboard_bullish_color, dashboard_bearish_color, dashboard_bgcolor), text_color = txt_col, text_size = table_text_size)  
+// TODO: Detect if previous candle closed lower than current opens
+// Print Buy/Sell labels
+
+draw_sig(rsi_buy_signal, rsi_sell_signal, takeProfit, stopLoss, atr, strategy)
+
+candle_color = candleColor(rounded_volume, rounded_avgVol)
+plotcandle(open, high, low, close, wickcolor = candle_color, bordercolor = candle_color, color = candle_color)
+plot(close, color = candle_color, trackprice = true, show_last = 1) 

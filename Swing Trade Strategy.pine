@@ -1,0 +1,35 @@
+//@version=5
+strategy("Swing Trading Strategy with ATR Stop Loss and Take Profit", overlay=true, shorttitle="Swing ATR SL TP", pyramiding=1)
+
+// Define inputs
+fast_length = input(title="Fast EMA Length", defval=9)
+slow_length = input(title="Slow EMA Length", defval=21)
+atr_length = input(title="ATR Length", defval=14)
+atr_sl_multiplier = input.float(title="ATR Stop Loss Multiplier", defval=2, minval=1)
+atr_tp_multiplier = input.float(title="ATR Take Profit Multiplier", defval=3, minval=1)
+
+// Calculate indicators
+ema_fast = ta.ema(close, fast_length)
+ema_slow = ta.ema(close, slow_length)
+atr = ta.atr(atr_length)
+
+// Generate signals
+long_signal = ta.crossover(ema_fast, ema_slow)
+short_signal = ta.crossunder(ema_fast, ema_slow)
+
+// Execute trades
+if long_signal
+    stop_level = close - (atr * atr_sl_multiplier)
+    take_level = close + (atr * atr_tp_multiplier)
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit Long", "Long", stop=stop_level, limit=take_level)
+
+if short_signal
+    stop_level = close + (atr * atr_sl_multiplier)
+    take_level = close - (atr * atr_tp_multiplier)
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit Short", "Short", stop=stop_level, limit=take_level)
+
+// Plot indicators
+plot(ema_fast, color=color.blue, linewidth=1, title="Fast EMA")
+plot(ema_slow, color=color.red, linewidth=1, title="Slow EMA")
