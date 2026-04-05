@@ -1,21 +1,77 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
-//@version=5
-indicator("Dynamic Support Line", overlay = true)
-import TradingView/ta/5
+//@version=6
+indicator("Dynamic Support Line", shorttitle="DSL", overlay=true)
 
-sma_top = ta.sma(ohlc4, 5)
-ema_top = ta.ema(ohlc4, 5)
-rma_top = ta.rma(ohlc4, 5)
-hma_top = ta.hma(ohlc4, 5)
-tema_top = ta.tema(ohlc4, 5)
-swma_top = ta.swma(ohlc4)
+// ==================== Settings ====================
+var ma_group = "Moving Average Settings"
+src       = input.source(ohlc4, "Source", group=ma_group)
+maLen     = input.int(5, "MA Length", minval=1, group=ma_group)
+stdLen    = input.int(14, "StdDev Length", minval=1, group=ma_group)
+stdMult   = input.float(1.786, "Band Multiplier", minval=0.1, step=0.1, group=ma_group)
 
-ma_mid = ta.sma(((ema_top + sma_top + rma_top + hma_top + tema_top + swma_top) / 6), 5)
-ma_top = ta.sma((ma_mid + (ta.stdev(ohlc4, 14)) * 1.786), 1)
-ma_bottom = ta.sma((ma_mid - (ta.stdev(ohlc4, 14)) * 1.786), 1)
+var disp_group = "Display Settings"
+i_showFill    = input.bool(true, "Show Band Fill", group=disp_group)
+i_showSignals = input.bool(true, "Show Bounce/Break Signals", group=disp_group)
+midColor      = input.color(color.white, "Mid Line Color", group=disp_group)
+bandColor     = input.color(color.rgb(25, 0, 253), "Band Color", group=disp_group)
 
-plot(ma_top, color = color.rgb(25, 0, 253))
-plot(ma_mid, color = color.rgb(5, 3, 11))
-plot(ma_bottom, color = color.rgb(25, 0, 253))
+// ==================================================================================
+// Core Calculations — composite MA from 6 types
+// ==================================================================================
+sma_top  = ta.sma(src, maLen)
+ema_top  = ta.ema(src, maLen)
+rma_top  = ta.rma(src, maLen)
+hma_top  = ta.hma(src, maLen)
+tema_top = ta.tema(src, maLen)
+swma_top = ta.swma(src)
+
+ma_mid    = ta.sma((ema_top + sma_top + rma_top + hma_top + tema_top + swma_top) / 6, maLen)
+deviation = ta.stdev(src, stdLen) * stdMult
+ma_top    = ma_mid + deviation
+ma_bottom = ma_mid - deviation
+
+// ==================================================================================
+// Signals
+// ==================================================================================
+
+// Price relationship to bands
+aboveMid = close > ma_mid
+belowMid = close < ma_mid
+
+// Bounce signals — price touches band and reverses
+bullBounce = low <= ma_bottom and close > ma_bottom and close > open
+bearBounce = high >= ma_top and close < ma_top and close < open
+
+// Break signals — price closes beyond band
+bullBreak = close > ma_top and close[1] <= ma_top[1]
+bearBreak = close < ma_bottom and close[1] >= ma_bottom[1]
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+pTop = plot(ma_top, "Upper Band", color=bandColor, linewidth=1)
+pMid = plot(ma_mid, "Mid Line", color=midColor, linewidth=2)
+pBot = plot(ma_bottom, "Lower Band", color=bandColor, linewidth=1)
+
+// Dynamic fill — green when price above mid, red when below
+fillColor = i_showFill ? (aboveMid ? color.new(color.green, 88) : color.new(color.red, 88)) : color(na)
+fill(pTop, pMid, color=fillColor, title="Upper Fill")
+fill(pMid, pBot, color=fillColor, title="Lower Fill")
+
+// Bounce/break signals
+plotshape(i_showSignals and bullBounce, style=shape.triangleup,   location=location.belowbar, color=color.green,  text="Bounce", textcolor=color.green, size=size.tiny, title="Bull Bounce")
+plotshape(i_showSignals and bearBounce, style=shape.triangledown, location=location.abovebar, color=color.red,    text="Bounce", textcolor=color.red,   size=size.tiny, title="Bear Bounce")
+plotshape(i_showSignals and bullBreak,  style=shape.triangleup,   location=location.belowbar, color=color.lime,   text="Break",  textcolor=color.lime,  size=size.small, title="Bull Break")
+plotshape(i_showSignals and bearBreak,  style=shape.triangledown, location=location.abovebar, color=color.orange,  text="Break",  textcolor=color.orange, size=size.small, title="Bear Break")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(bullBounce, "Bullish Bounce",     "Price bounced off lower dynamic support band")
+alertcondition(bearBounce, "Bearish Bounce",     "Price bounced off upper dynamic resistance band")
+alertcondition(bullBreak,  "Bullish Breakout",   "Price closed above upper dynamic band")
+alertcondition(bearBreak,  "Bearish Breakdown",  "Price closed below lower dynamic band")
+alertcondition(ta.crossover(close, ma_mid),  "Cross Above Mid", "Price crossed above dynamic mid line")
+alertcondition(ta.crossunder(close, ma_mid), "Cross Below Mid", "Price crossed below dynamic mid line")

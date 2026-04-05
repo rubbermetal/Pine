@@ -1,40 +1,88 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
-//@version=5
-indicator("MacD", overlay = false, timeframe="", timeframe_gaps=true)
+//@version=6
+indicator("MACD", overlay=false)
 
-var MACD_group =         '===================== MacD Settings ===================='
-macdsrc = input.source(title = 'MacD Source', defval = close, group = MACD_group)
-int macdfastlen = input.int(title = 'MacD Fast Length', defval = 12, minval = 1, group = MACD_group)
-int macdslowlen = input.int(title = 'MacD Slow Length', defval = 26, minval = 1, group = MACD_group)
-int macdsignallen = input.int(title = 'MacD Signal Smoothing', defval = 9, minval = 1, maxval = 50, group = MACD_group)
-color upmacd = input.color(title = 'MacD Cross Up', defval = #05011d, inline = MACD_group, group = MACD_group)
-color downmacd = input.color(title = 'MacD Cross Down', defval = #EF5350, inline = MACD_group, group = MACD_group)
-bool i_showMACDcross = input.bool(title = 'Show The MACD Cross', defval = false, group = MACD_group)
-// ************************************************************************************
-// MacD Cross
-// Default - (EMA 12) (EMA 26) (SMA 9)
-// ************************************************************************************
-fastavg = ta.ema(macdsrc, macdfastlen)
-slowavg = ta.ema(macdsrc, macdslowlen)
-macd = fastavg - slowavg
-macdsignal = ta.ema(macd, macdsignallen)
-cross_3 = ta.cross(macdsignal, macd)
-macdata = cross_3 ? macdsignal : na
-crossover_3 = ta.crossover(macdsignal, macd)
-crossunder_3 = ta.crossunder(macdsignal, macd)
-macdhist = macd - macdsignal
-macddir = crossover_3 ? 'down' : crossunder_3 ? 'up' : na
+// ==================== MACD Settings ====================
+var macd_group = "MACD Settings"
+macdsrc       = input.source(close, "Source", group=macd_group)
+macdfastlen   = input.int(12, "Fast Length", minval=1, group=macd_group)
+macdslowlen   = input.int(26, "Slow Length", minval=1, group=macd_group)
+macdsignallen = input.int(9, "Signal Smoothing", minval=1, maxval=50, group=macd_group)
+sigType       = input.string("EMA", "Signal Line Type", options=["EMA", "SMA"], group=macd_group)
 
-macdclr = macddir == 'down' ? downmacd : macddir == 'up' ? upmacd : na
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showCross      = input.bool(true, "Show MACD/Signal Cross", group=disp_group)
+i_showZeroCross  = input.bool(true, "Show Zero-Line Cross", group=disp_group)
+i_showDivergence = input.bool(false, "Show Divergence Signals", group=disp_group)
+i_divLookback    = input.int(5, "Divergence Lookback", minval=3, group=disp_group)
 
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+fastavg    = ta.ema(macdsrc, macdfastlen)
+slowavg    = ta.ema(macdsrc, macdslowlen)
+macd       = fastavg - slowavg
+macdsignal = sigType == "SMA" ? ta.sma(macd, macdsignallen) : ta.ema(macd, macdsignallen)
+macdhist   = macd - macdsignal
 
-trend = macdhist > 0 ? 'Bullish' : 'Bearish'
+// Cross detection
+bullCross = ta.crossover(macd, macdsignal)   // MACD crosses above signal — bullish
+bearCross = ta.crossunder(macd, macdsignal)  // MACD crosses below signal — bearish
+zeroCrossUp   = ta.crossover(macd, 0)
+zeroCrossDown = ta.crossunder(macd, 0)
 
-macd_loc = macddir == 'up' ? "location.abovebar" : "location.belowbar"
+// Histogram momentum — 4 states
+histGrowBull   = macdhist >= 0 and macdhist > macdhist[1]  // Above zero, growing
+histShrinkBull = macdhist >= 0 and macdhist <= macdhist[1] // Above zero, shrinking
+histGrowBear   = macdhist < 0 and macdhist < macdhist[1]   // Below zero, growing (more negative)
+histShrinkBear = macdhist < 0 and macdhist >= macdhist[1]  // Below zero, shrinking
+
+histColor = histGrowBull ? color.rgb(0, 230, 64) : histShrinkBull ? color.rgb(0, 150, 40) : histGrowBear ? color.rgb(230, 30, 30) : color.rgb(150, 40, 40)
+
+// Divergence detection
+priceHigher  = high > ta.highest(high, i_divLookback)[1]
+macdNotHigh  = macd < ta.highest(macd, i_divLookback)[1]
+bearDiv      = priceHigher and macdNotHigh and macd > 0
+
+priceLower   = low < ta.lowest(low, i_divLookback)[1]
+macdNotLow   = macd > ta.lowest(macd, i_divLookback)[1]
+bullDiv      = priceLower and macdNotLow and macd < 0
+
+// ==================================================================================
+// Plots
+// ==================================================================================
 hline(0, "Zero Line", color=color.new(#787B86, 50))
-plot(macdhist, color = color.rgb(237, 36, 255), linewidth = 1, style = plot.style_columns, title = 'Hist')
-plot(macdsignal, color = color.rgb(255, 152, 36, 0), linewidth = 1, style = plot.style_line, title = 'Signal')
-plot(macd, color = color.rgb(44, 29, 255), linewidth = 1, style = plot.style_line, title = 'B')
-plotshape(i_showMACDcross ? macdata : na, style=shape.circle, color=color.new(macdclr, 0), size=size.tiny, location=location.absolute, title = "MacD Cross")
+
+// Histogram — 4-color momentum
+plot(macdhist, color=histColor, linewidth=1, style=plot.style_columns, title="Histogram")
+
+// MACD and Signal lines
+plot(macd,       color=color.rgb(44, 29, 255),    linewidth=2, title="MACD")
+plot(macdsignal, color=color.rgb(255, 152, 36, 0), linewidth=1, title="Signal")
+
+// MACD/Signal cross shapes
+crossVal = bullCross or bearCross ? macdsignal : na
+crossClr = bullCross ? color.green : color.red
+plotshape(i_showCross and bullCross, style=shape.circle, location=location.absolute, color=color.green, size=size.tiny, title="Bull Cross")
+plotshape(i_showCross and bearCross, style=shape.circle, location=location.absolute, color=color.red,   size=size.tiny, title="Bear Cross")
+
+// Zero-line cross
+plotshape(i_showZeroCross and zeroCrossUp,   style=shape.triangleup,   location=location.bottom, color=color.lime,   text="0+", textcolor=color.lime,   size=size.tiny, title="Zero Cross Up")
+plotshape(i_showZeroCross and zeroCrossDown, style=shape.triangledown, location=location.top,    color=color.orange, text="0-", textcolor=color.orange, size=size.tiny, title="Zero Cross Down")
+
+// Divergence
+bgcolor(i_showDivergence and bearDiv ? color.new(color.orange, 85) : na, title="Bearish Divergence")
+bgcolor(i_showDivergence and bullDiv ? color.new(color.teal, 85)   : na, title="Bullish Divergence")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(bullCross,     "MACD Bullish Cross",     "MACD crossed above signal line")
+alertcondition(bearCross,     "MACD Bearish Cross",     "MACD crossed below signal line")
+alertcondition(zeroCrossUp,   "MACD Above Zero",        "MACD crossed above zero line")
+alertcondition(zeroCrossDown, "MACD Below Zero",        "MACD crossed below zero line")
+alertcondition(bullDiv,       "Bullish Divergence",     "Price making new low but MACD is not")
+alertcondition(bearDiv,       "Bearish Divergence",     "Price making new high but MACD is not")

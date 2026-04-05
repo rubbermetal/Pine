@@ -1,36 +1,125 @@
-//@version=4
-study("Fear and Greed Indicator", shorttitle="FGI", overlay=false)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Input Parameters
-rsiPeriod = input(14, title="RSI Period", minval=1)
-rocPeriod = input(10, title="ROC Period", minval=1)
-atrPeriod = input(14, title="ATR Period", minval=1)
+//@version=6
+indicator("Fear and Greed Indicator", shorttitle="FGI", overlay=false)
 
-// Market Momentum (RSI or ROC)
-rsi = rsi(close, rsiPeriod)
-roc = roc(close, rocPeriod)
-momentum = (rsi + roc) / 2
+// ==================== Component Settings ====================
+var comp_group = "Component Settings"
+rsiPeriod  = input.int(14, "RSI Period", minval=1, group=comp_group)
+rocPeriod  = input.int(10, "ROC Period", minval=1, group=comp_group)
+atrPeriod  = input.int(14, "ATR Period", minval=1, group=comp_group)
+normLen    = input.int(100, "Normalization Lookback", minval=20, tooltip="Period to calculate dynamic min/max for normalization", group=comp_group)
 
-// Market Volatility (ATR)
-volatility = atr(atrPeriod)
+// ==================== Market Reference ====================
+var mkt_group = "Market Reference"
+ticker     = input.symbol("CMC200", "Market Index Symbol", group=mkt_group)
+bbLen      = input.int(20, "Bollinger Band Length (Breadth Proxy)", minval=5, group=mkt_group)
+bbMult     = input.float(2.0, "Bollinger Band Multiplier", minval=0.5, step=0.5, group=mkt_group)
 
-// Market Performance (S&P 500)
-ticker = input("CMC200", type=input.symbol, title="Market Index Symbol")
-market_performance = security(ticker, "D", close)
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showZoneLabels = input.bool(true, "Show Zone Labels", group=disp_group)
+i_smoothLen      = input.int(3, "Output Smoothing", minval=1, maxval=10, group=disp_group)
 
-// Normalize Factors
-normalize(src, minval, maxval) =>
-    (src - minval) / (maxval - minval)
+// ==================================================================================
+// Dynamic Normalization — scales any value to 0-100 using its own recent range
+// ==================================================================================
+f_normalize(src, len) =>
+    hi = ta.highest(src, len)
+    lo = ta.lowest(src, len)
+    hi == lo ? 50.0 : (src - lo) / (hi - lo) * 100
 
-momentum_norm = normalize(momentum, 0, 100)
-volatility_norm = normalize(volatility, 0, 100)
-performance_norm = normalize(market_performance, 0, 100)
+// ==================================================================================
+// Component Calculations
+// ==================================================================================
 
-// Calculate Fear and Greed Index
-fear_and_greed = (momentum_norm + (1 - volatility_norm) + performance_norm) / 3
+// 1. Momentum: RSI (already 0-100) + normalized ROC
+rsi = ta.rsi(close, rsiPeriod)
+roc = ta.roc(close, rocPeriod)
+roc_norm = f_normalize(roc, normLen)
+momentum = (rsi + roc_norm) / 2
 
-// Plot Fear and Greed Index
-plot(fear_and_greed, color=color.red, linewidth=2, title="Fear and Greed Index")
+// 2. Volatility: ATR normalized to recent range (high ATR = fear, low ATR = greed)
+atr_val = ta.atr(atrPeriod)
+atr_norm = f_normalize(atr_val, normLen)
+volatility = 100 - atr_norm  // Invert: low vol = greed, high vol = fear
 
-// Plot Background Color
-bgcolor(fear_and_greed > 50 ? color.green : color.red, transp=90)
+// 3. Market Performance: external index price position in its recent range
+mkt_close = request.security(ticker, "D", close, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+mkt_perf = not na(mkt_close) ? f_normalize(mkt_close, normLen) : 50.0
+
+// 4. Price Breadth Proxy: where price sits relative to Bollinger Bands
+// Near upper band = greed, near lower band = fear
+bb_basis = ta.sma(close, bbLen)
+bb_dev   = ta.stdev(close, bbLen) * bbMult
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+bb_pos   = bb_upper == bb_lower ? 50.0 : (close - bb_lower) / (bb_upper - bb_lower) * 100
+
+// 5. Safe Haven Demand Proxy: distance from recent high
+// Near all-time high = greed, far from it = fear
+recentHigh = ta.highest(high, normLen)
+highDist   = recentHigh > 0 ? (close / recentHigh) * 100 : 50.0
+
+// ==================================================================================
+// Composite Fear & Greed Index (0-100)
+// ==================================================================================
+// Weights: momentum 25%, volatility 25%, market perf 20%, breadth 15%, safe haven 15%
+raw_fgi = momentum * 0.25 + volatility * 0.25 + mkt_perf * 0.20 + bb_pos * 0.15 + highDist * 0.15
+fgi     = ta.sma(raw_fgi, i_smoothLen)
+
+// Zone classification
+zone = fgi >= 80 ? "EXTREME GREED" : fgi >= 60 ? "GREED" : fgi >= 40 ? "NEUTRAL" : fgi >= 20 ? "FEAR" : "EXTREME FEAR"
+zoneColor = fgi >= 80 ? color.new(color.lime, 0) : fgi >= 60 ? color.new(color.green, 20) : fgi >= 40 ? color.new(color.gray, 20) : fgi >= 20 ? color.new(color.orange, 20) : color.new(color.red, 0)
+
+// Zone transitions
+zonePrev = fgi[1] >= 80 ? "EXTREME GREED" : fgi[1] >= 60 ? "GREED" : fgi[1] >= 40 ? "NEUTRAL" : fgi[1] >= 20 ? "FEAR" : "EXTREME FEAR"
+zoneChanged = zone != zonePrev
+
+// ==================================================================================
+// Grid Layout
+// ==================================================================================
+h100 = hline(100, "100", color=color.new(color.gray, 80))
+h80  = hline(80, "Extreme Greed", color=color.new(color.lime, 50), linestyle=hline.style_dashed)
+h60  = hline(60, "Greed",         color=color.new(color.green, 50), linestyle=hline.style_dotted)
+h40  = hline(40, "Fear",          color=color.new(color.orange, 50), linestyle=hline.style_dotted)
+h20  = hline(20, "Extreme Fear",  color=color.new(color.red, 50), linestyle=hline.style_dashed)
+h0   = hline(0, "0", color=color.new(color.gray, 80))
+
+// Zone fills
+fill(h80, h100, color=color.new(color.lime, 90))
+fill(h60, h80,  color=color.new(color.green, 92))
+fill(h40, h60,  color=color.new(color.gray, 95))
+fill(h20, h40,  color=color.new(color.orange, 92))
+fill(h0,  h20,  color=color.new(color.red, 90))
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+
+// FGI line with gradient coloring
+fgiColor = color.from_gradient(fgi, 10, 90, color.red, color.lime)
+plot(fgi, "Fear & Greed Index", color=fgiColor, linewidth=2)
+
+// 50 midline reference
+hline(50, "Midline", color=color.new(color.white, 70), linestyle=hline.style_solid)
+
+// Zone transition markers
+plotshape(zoneChanged and fgi > fgi[1], style=shape.triangleup,   location=location.bottom, color=color.green, text="Zone", textcolor=color.green, size=size.tiny, title="Zone Shift Up")
+plotshape(zoneChanged and fgi < fgi[1], style=shape.triangledown, location=location.top,    color=color.red,   text="Zone", textcolor=color.red,   size=size.tiny, title="Zone Shift Down")
+
+// Zone label table
+var tbl = table.new(position.top_right, 1, 1, bgcolor=color.new(color.black, 50), border_width=1, border_color=color.new(color.gray, 50))
+
+if i_showZoneLabels and barstate.islast
+    table.cell(tbl, 0, 0, zone + " (" + str.tostring(fgi, "#.0") + ")", bgcolor=zoneColor, text_color=color.white, text_size=size.small)
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(ta.crossover(fgi, 80),  "Entering Extreme Greed", "FGI crossed above 80 — extreme greed territory")
+alertcondition(ta.crossunder(fgi, 20), "Entering Extreme Fear",  "FGI crossed below 20 — extreme fear territory")
+alertcondition(ta.crossover(fgi, 50),  "FGI Above 50",           "Fear & Greed crossed above neutral midline")
+alertcondition(ta.crossunder(fgi, 50), "FGI Below 50",           "Fear & Greed crossed below neutral midline")
+alertcondition(zoneChanged,            "Zone Changed",            "Fear & Greed moved to a new zone")
