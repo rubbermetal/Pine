@@ -1,35 +1,101 @@
-//@version=5
-strategy("Swing Trading Strategy with ATR Stop Loss and Take Profit", overlay=true, shorttitle="Swing ATR SL TP", pyramiding=1)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Define inputs
-fast_length = input(title="Fast EMA Length", defval=9)
-slow_length = input(title="Slow EMA Length", defval=21)
-atr_length = input(title="ATR Length", defval=14)
-atr_sl_multiplier = input.float(title="ATR Stop Loss Multiplier", defval=2, minval=1)
-atr_tp_multiplier = input.float(title="ATR Take Profit Multiplier", defval=3, minval=1)
+//@version=6
+indicator("Swing Trade ATR", shorttitle="Swing", overlay=true)
 
-// Calculate indicators
+// ==================== EMA Settings ====================
+var ema_group = "EMA Settings"
+fast_length = input.int(9, "Fast EMA Length", minval=1, group=ema_group)
+slow_length = input.int(21, "Slow EMA Length", minval=1, group=ema_group)
+
+// ==================== ATR Risk Management ====================
+var atr_group = "ATR Risk Management"
+atr_length       = input.int(14, "ATR Length", minval=1, group=atr_group)
+atr_sl_multiplier = input.float(2.0, "ATR Stop Loss Multiplier", minval=0.5, step=0.5, group=atr_group)
+atr_tp_multiplier = input.float(3.0, "ATR Take Profit Multiplier", minval=0.5, step=0.5, group=atr_group)
+
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showSignals  = input.bool(true, "Show Entry Signals", group=disp_group)
+i_showSLTP     = input.bool(true, "Show SL/TP Levels", group=disp_group)
+i_showRR       = input.bool(true, "Show R:R Info Table", group=disp_group)
+
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
 ema_fast = ta.ema(close, fast_length)
 ema_slow = ta.ema(close, slow_length)
 atr = ta.atr(atr_length)
 
-// Generate signals
-long_signal = ta.crossover(ema_fast, ema_slow)
+long_signal  = ta.crossover(ema_fast, ema_slow)
 short_signal = ta.crossunder(ema_fast, ema_slow)
 
-// Execute trades
+bullish = ema_fast > ema_slow
+
+// Track SL/TP from last signal
+var float sl_level = na
+var float tp_level = na
+var float entry_level = na
+var bool  lastIsLong = true
+
 if long_signal
-    stop_level = close - (atr * atr_sl_multiplier)
-    take_level = close + (atr * atr_tp_multiplier)
-    strategy.entry("Long", strategy.long)
-    strategy.exit("Exit Long", "Long", stop=stop_level, limit=take_level)
-
+    entry_level := close
+    sl_level := close - atr * atr_sl_multiplier
+    tp_level := close + atr * atr_tp_multiplier
+    lastIsLong := true
 if short_signal
-    stop_level = close + (atr * atr_sl_multiplier)
-    take_level = close - (atr * atr_tp_multiplier)
-    strategy.entry("Short", strategy.short)
-    strategy.exit("Exit Short", "Short", stop=stop_level, limit=take_level)
+    entry_level := close
+    sl_level := close + atr * atr_sl_multiplier
+    tp_level := close - atr * atr_tp_multiplier
+    lastIsLong := false
 
-// Plot indicators
-plot(ema_fast, color=color.blue, linewidth=1, title="Fast EMA")
-plot(ema_slow, color=color.red, linewidth=1, title="Slow EMA")
+// Check if SL/TP hit
+slHit = (lastIsLong and not na(sl_level) and low <= sl_level) or (not lastIsLong and not na(sl_level) and high >= sl_level)
+tpHit = (lastIsLong and not na(tp_level) and high >= tp_level) or (not lastIsLong and not na(tp_level) and low <= tp_level)
+
+if slHit or tpHit
+    sl_level := na
+    tp_level := na
+    entry_level := na
+
+// Risk/reward ratio
+rr_ratio = atr_tp_multiplier / atr_sl_multiplier
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+pFast = plot(ema_fast, "Fast EMA", color=color.new(color.blue, 0), linewidth=2)
+pSlow = plot(ema_slow, "Slow EMA", color=color.new(color.red, 0), linewidth=2)
+fill(pFast, pSlow, color=bullish ? color.new(color.green, 85) : color.new(color.red, 85), title="EMA Fill")
+
+// Entry signals
+plotshape(i_showSignals and long_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, text="Swing L", textcolor=color.green, size=size.small, title="Swing Long")
+plotshape(i_showSignals and short_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   text="Swing S", textcolor=color.red,   size=size.small, title="Swing Short")
+
+// SL/TP levels
+plot(i_showSLTP and not na(sl_level) ? sl_level : na, "Stop Loss", color=color.new(color.orange, 30), style=plot.style_linebr, linewidth=1)
+plot(i_showSLTP and not na(tp_level) ? tp_level : na, "Take Profit", color=color.new(color.lime, 30), style=plot.style_linebr, linewidth=1)
+plot(i_showSLTP and not na(entry_level) ? entry_level : na, "Entry", color=color.new(color.gray, 50), style=plot.style_linebr, linewidth=1)
+
+// SL/TP hit markers
+plotshape(slHit, style=shape.xcross, location=location.absolute, color=color.orange, size=size.tiny, title="SL Hit")
+plotshape(tpHit, style=shape.circle, location=location.absolute, color=color.lime, size=size.tiny, title="TP Hit")
+
+// R:R info table
+var tbl = table.new(position.top_right, 2, 3, bgcolor=color.new(color.black, 50), border_width=1, border_color=color.new(color.gray, 50))
+if i_showRR and barstate.islast
+    table.cell(tbl, 0, 0, "ATR", text_color=color.gray, text_size=size.tiny)
+    table.cell(tbl, 1, 0, str.tostring(atr, format.mintick), text_color=color.white, text_size=size.tiny)
+    table.cell(tbl, 0, 1, "R:R", text_color=color.gray, text_size=size.tiny)
+    table.cell(tbl, 1, 1, "1:" + str.tostring(rr_ratio, "#.0"), text_color=color.new(color.lime, 0), text_size=size.tiny)
+    table.cell(tbl, 0, 2, "Trend", text_color=color.gray, text_size=size.tiny)
+    table.cell(tbl, 1, 2, bullish ? "BULL" : "BEAR", text_color=bullish ? color.green : color.red, text_size=size.tiny)
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(long_signal,  "Swing Long Signal",  "Fast EMA crossed above slow EMA — swing long entry")
+alertcondition(short_signal, "Swing Short Signal", "Fast EMA crossed below slow EMA — swing short entry")
+alertcondition(slHit,        "Stop Loss Hit",      "Price hit ATR-based stop loss level")
+alertcondition(tpHit,        "Take Profit Hit",    "Price hit ATR-based take profit level")

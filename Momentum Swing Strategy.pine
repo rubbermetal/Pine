@@ -1,57 +1,83 @@
-//@version=5
-strategy('Improved Momentum Indicator Strategy', overlay=true)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Define inputs
-fast_length = input(title='Fast Length', defval=5)
-slow_length = input(title='Slow Length', defval=12)
-rsi_length = input(title='RSI Length', defval=14)
-adxPeriod = input(14, title='ADX Period')
-atrLength = input(14, title='ATR Length')
-high_volume_multiplier = input.float(2.0, title='High Volume Multiplier', minval=1)
-atr_stop_loss_multiplier = input.int(2, title='ATR Stop Loss Multiplier', minval=1)
+//@version=6
+indicator("Momentum Swing", shorttitle="MomSwing", overlay=true)
 
+// ==================== Settings ====================
+var mom_group = "Momentum Settings"
+fast_length = input.int(5, "Fast EMA Length", minval=1, group=mom_group)
+slow_length = input.int(12, "Slow EMA Length", minval=1, group=mom_group)
+rsi_length  = input.int(14, "RSI Length", minval=1, group=mom_group)
+adxPeriod   = input.int(14, "ADX Period", minval=1, group=mom_group)
+atrLength   = input.int(14, "ATR Length", minval=1, group=mom_group)
 
-// Calculate indicators
+var vol_group = "Volume Settings"
+high_volume_multiplier = input.float(2.0, "High Volume Multiplier", minval=1, group=vol_group)
+
+var disp_group = "Display Settings"
+i_showSignals = input.bool(true, "Show Entry Signals", group=disp_group)
+i_showVolBars = input.bool(true, "Show Volume-Colored Bars", group=disp_group)
+i_showSLlines = input.bool(true, "Show ATR Stop Loss Lines", group=disp_group)
+atr_sl_mult   = input.float(2.0, "ATR Stop Loss Multiplier", minval=0.5, step=0.5, group=disp_group)
+
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
 ema_fast = ta.ema(close, fast_length)
 ema_slow = ta.ema(close, slow_length)
 macd = ema_fast - ema_slow
 macd_signal = ta.ema(macd, 9)
 rsi = ta.rsi(close, rsi_length)
 avg_volume = ta.sma(volume, 50)
-
-//Calculate ADX
-[diPlus, diMinus, adxValue] = ta.dmi(adxPeriod, 14)
-
-// Calculate ATR
 atr = ta.atr(atrLength)
 
-// Determine candle color
-candle_color = close > open ? color.green : color.red
-high_vol_up_color = color.new(#2327f7, 70)
-high_vol_down_color = color.new(#f12424, 70)
+[diPlus, diMinus, adxValue] = ta.dmi(adxPeriod, 14)
 
-// Detect high volume moves
-high_vol_up = close > open and volume > high_volume_multiplier * avg_volume
+// High volume detection
+high_vol_up   = close > open and volume > high_volume_multiplier * avg_volume
 high_vol_down = close < open and volume > high_volume_multiplier * avg_volume
 
-// Generate signals
-long_signal = ta.crossover(macd, macd_signal) and rsi < 30 and adxValue > 25
+// Entry signals — MACD cross + RSI extreme + strong trend (ADX > 25)
+long_signal  = ta.crossover(macd, macd_signal) and rsi < 30 and adxValue > 25
 short_signal = ta.crossunder(macd, macd_signal) and rsi > 70 and adxValue > 25
 
-// Execute trades
+// ATR-based stop levels from signal bars
+var float longSL = na
+var float shortSL = na
 if long_signal
-    strategy.entry('Buy', strategy.long)
-    strategy.exit("Exit Long", "Buy", stop=close - atr * atr_stop_loss_multiplier, trail_points=atr * atr_stop_loss_multiplier)
-
+    longSL := close - atr * atr_sl_mult
 if short_signal
-    strategy.entry('Sell', strategy.short)
-    strategy.exit("Exit Short", "Sell", stop=close + atr * atr_stop_loss_multiplier, trail_points=atr * atr_stop_loss_multiplier)
+    shortSL := close + atr * atr_sl_mult
 
-// Plot indicators
-plot(macd, color=color.new(color.blue, 0))
-plot(macd_signal, color=color.new(color.yellow, 0))
-plot(rsi, color=color.new(color.red, 0))
-plot(adxValue, color=color.new(color.green, 0))
+// ==================================================================================
+// Plots
+// ==================================================================================
 
-// Plot candles
-barcolor(high_vol_up ? high_vol_up_color : high_vol_down ? high_vol_down_color : candle_color)
+// EMA lines
+plot(ema_fast, "Fast EMA", color=color.new(color.blue, 0), linewidth=1)
+plot(ema_slow, "Slow EMA", color=color.new(color.yellow, 0), linewidth=1)
+
+// Volume-colored bars
+candle_color = close > open ? color.new(color.green, 30) : color.new(color.red, 30)
+high_vol_color = high_vol_up ? color.new(color.blue, 0) : high_vol_down ? color.new(color.fuchsia, 0) : candle_color
+barcolor(i_showVolBars ? high_vol_color : na)
+
+// Entry signals
+plotshape(i_showSignals and long_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, text="Long",  textcolor=color.green, size=size.small, title="Long Signal")
+plotshape(i_showSignals and short_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   text="Short", textcolor=color.red,   size=size.small, title="Short Signal")
+
+// ATR stop loss lines
+plot(i_showSLlines and not na(longSL) and close > longSL ? longSL : na, "Long SL", color=color.new(color.orange, 40), style=plot.style_linebr, linewidth=1)
+plot(i_showSLlines and not na(shortSL) and close < shortSL ? shortSL : na, "Short SL", color=color.new(color.orange, 40), style=plot.style_linebr, linewidth=1)
+
+// Trend background when ADX confirms
+bgcolor(adxValue > 25 and diPlus > diMinus ? color.new(color.green, 95) : adxValue > 25 and diMinus > diPlus ? color.new(color.red, 95) : na, title="ADX Trend BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(long_signal,   "Momentum Long Signal",  "MACD cross up + RSI oversold + ADX trending")
+alertcondition(short_signal,  "Momentum Short Signal", "MACD cross down + RSI overbought + ADX trending")
+alertcondition(high_vol_up,   "High Volume Bull Bar",  "Bullish candle with volume above multiplier threshold")
+alertcondition(high_vol_down, "High Volume Bear Bar",  "Bearish candle with volume above multiplier threshold")

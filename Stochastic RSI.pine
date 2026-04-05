@@ -1,64 +1,88 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
-//@version=5
-indicator("Stochastic RSI", format=format.percent, overlay = false)
 
-// ************************************************************************************
-// function smma 
-// formula (smma[1] * (length - 1) + src) / length
-// returns smma
-// ************************************************************************************
+//@version=6
+indicator("Stochastic RSI", shorttitle="StochRSI", format=format.percent, overlay=false)
+
+// ==================== Settings ====================
+var stoch_group = "Stochastic RSI Settings"
+int periodK = input.int(14, "Stochastic %K Length", minval=1, group=stoch_group)
+int smoothK = input.int(3, "%K Smoothing", minval=1, group=stoch_group)
+int smoothD = input.int(3, "%D Smoothing", minval=1, group=stoch_group)
+
+var disp_group = "Display Settings"
+int rsiob   = input.int(80, "Overbought Level", minval=50, maxval=100, group=disp_group)
+int rsios   = input.int(20, "Oversold Level", minval=0, maxval=50, group=disp_group)
+bool i_showDiv     = input.bool(true, "Show K-D Divergence Histogram", group=disp_group)
+bool i_showSignals = input.bool(true, "Show K/D Cross Signals", group=disp_group)
+bool i_showZoneFill = input.bool(true, "Show OB/OS Zone Fills", group=disp_group)
+
+// ==================================================================================
+// SMMA Helper
+// ==================================================================================
 smma(src, length) =>
     sma = ta.sma(src, length)
     smma = 0.0
     smma := na(smma[1]) ? sma : (smma[1] * (length - 1) + src) / length
     smma
 
-var RSI_group =          '============= RSI and Stochastic Settings =============='
-int rsiob = input.int(title = 'RSI High Level', defval = 80, minval = 1, group = RSI_group)
-int rsios = input.int(title = 'RSI Low Level', defval = 20, minval = 1, group = RSI_group)
-int periodK = input.int(title = 'Stochastic %K Length', defval = 14, minval = 1, group = RSI_group)
-int smoothD = input.int(title = 'Stochastic %D Smoothing', defval = 3, minval = 1, group = RSI_group)
-int smoothK = input.int(title = 'Stochastic %K Smoothing', defval = 3, minval = 1, group = RSI_group)
-
-var colors = array.new_color()
-if barstate.isfirst  
-    // Generate the green to red gradient
-    for i = 0 to 30
-        redValue = int(255 * i / 70)
-        greenValue = 255 - redValue
-        blueValue = 0
-        array.push(colors, color.rgb(redValue, greenValue, blueValue))
-
-    // Generate the red to yellow gradient
-    for i = 31 to 70
-        redValue = 255
-        greenValue = int(255 - 255 * (i - 30) / 70)
-        blueValue = 0
-        array.push(colors, color.rgb(redValue, greenValue, blueValue))
-
-    // Generate the brighter yellow gradient
-    for i = 71 to 100
-        redValue = 255
-        greenValue = int(255 - 255 * (i - 70) / 30)
-        blueValue = 0
-        array.push(colors, color.rgb(redValue, greenValue, blueValue))
-
-
-// ************************************************************************************
-// Calculate if the RSI is high or low
-// 
-// ************************************************************************************
-
-// Stochastic RSI Values
+// ==================================================================================
+// Stochastic RSI Calculation
+// ==================================================================================
 k = smma(ta.stoch(close, high, low, periodK), smoothK)
 d = smma(k, smoothD)
 divergence = (math.round(k) - math.round(d)) + 50
-rsiclr = array.get(colors, math.round(d)) 
-bgcolor(color.rgb(150, 147, 147))
-hline(rsiob, "Overbought", color=color.new(#787B86, 50))
-hline(50, "Base", color=color.new(#787B86, 50))
-hline(rsios, "Oversold", color=color.new(#787B86, 50))
-plot(divergence, title = 'Divergence', linewidth = 2, style = plot.style_columns, color = color.rgb(75, 72, 252), histbase = 50)
-plot(k, title = 'K', linewidth = 2, style = plot.style_line, color = color.rgb(4, 0, 255))
-plot(d, title = 'D', linewidth = 2, style = plot.style_line, color = color.rgb(255, 174, 0))
+
+// Signals
+bullCross = ta.crossover(k, d) and d < rsios
+bearCross = ta.crossunder(k, d) and d > rsiob
+obEntry   = ta.crossover(k, rsiob)
+osEntry   = ta.crossunder(k, rsios)
+obExit    = ta.crossunder(k, rsiob)
+osExit    = ta.crossover(k, rsios)
+
+// 4-color divergence histogram
+divGrowBull  = divergence >= 50 and divergence > divergence[1]
+divShrinkBull = divergence >= 50 and divergence <= divergence[1]
+divGrowBear  = divergence < 50 and divergence < divergence[1]
+divShrinkBear = divergence < 50 and divergence >= divergence[1]
+divColor = divGrowBull ? color.rgb(0, 200, 80) : divShrinkBull ? color.rgb(0, 120, 50) : divGrowBear ? color.rgb(200, 30, 30) : color.rgb(120, 40, 40)
+
+// K line color gradient
+kColor = color.from_gradient(k, 10, 90, color.green, color.red)
+
+// ==================================================================================
+// Grid Layout
+// ==================================================================================
+h100 = hline(100, "100", color=color.new(color.gray, 80))
+hOB  = hline(rsiob, "Overbought", color=color.new(color.red, 50))
+hMid = hline(50, "Midline", color=color.new(color.gray, 60))
+hOS  = hline(rsios, "Oversold", color=color.new(color.green, 50))
+h0   = hline(0, "0", color=color.new(color.gray, 80))
+
+// Zone fills
+fill(hOB, h100, color=i_showZoneFill ? color.new(color.red, 90) : color(na), title="OB Zone")
+fill(h0, hOS,   color=i_showZoneFill ? color.new(color.green, 90) : color(na), title="OS Zone")
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+plot(i_showDiv ? divergence : na, title='K-D Divergence', linewidth=2, style=plot.style_columns, color=divColor, histbase=50)
+plot(k, title='%K', linewidth=2, style=plot.style_line, color=kColor)
+plot(d, title='%D', linewidth=2, style=plot.style_line, color=color.rgb(255, 174, 0))
+
+// Cross signals
+plotshape(i_showSignals and bullCross, style=shape.triangleup,   location=location.bottom, color=color.green, text="Buy",  textcolor=color.green, size=size.tiny, title="Bull K/D Cross")
+plotshape(i_showSignals and bearCross, style=shape.triangledown, location=location.top,    color=color.red,   text="Sell", textcolor=color.red,   size=size.tiny, title="Bear K/D Cross")
+plotshape(i_showSignals and osExit,    style=shape.circle, location=location.bottom, color=color.new(color.green, 30), size=size.tiny, title="OS Exit")
+plotshape(i_showSignals and obExit,    style=shape.circle, location=location.top,    color=color.new(color.red, 30),   size=size.tiny, title="OB Exit")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(bullCross,  "Bullish K/D Cross",    "K crossed above D in oversold zone")
+alertcondition(bearCross,  "Bearish K/D Cross",    "K crossed below D in overbought zone")
+alertcondition(obEntry,    "Entered Overbought",   "StochRSI K entered overbought territory")
+alertcondition(osEntry,    "Entered Oversold",     "StochRSI K entered oversold territory")
+alertcondition(osExit,     "Exited Oversold",      "StochRSI K crossed back above oversold")
+alertcondition(obExit,     "Exited Overbought",    "StochRSI K crossed back below overbought")

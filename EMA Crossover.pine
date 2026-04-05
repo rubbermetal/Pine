@@ -1,31 +1,75 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
-//@version=5
-strategy("EMA Crossover")
-import TradingView/Strategy/3
+//@version=6
+indicator("EMA Crossover", shorttitle="EMA Cross", overlay=true)
 
-ema_f_len = input(10)
-ema_s_len = input(20)
-ema_src = input(close)
+// ==================== Settings ====================
+var ema_group = "EMA Settings"
+ema_src   = input.source(close, "Source", group=ema_group)
+ema_f_len = input.int(10, "Fast EMA Length", minval=1, group=ema_group)
+ema_s_len = input.int(20, "Slow EMA Length", minval=1, group=ema_group)
 
-tp = close + (close * .03)
-sl = close - (close * .01)
+var disp_group = "Display Settings"
+i_showFill    = input.bool(true, "Show EMA Fill", group=disp_group)
+i_showSignals = input.bool(true, "Show Cross Signals", group=disp_group)
+i_showTP_SL   = input.bool(false, "Show TP/SL Reference Lines", group=disp_group)
+tpPct         = input.float(3.0, "Take Profit %", minval=0.1, step=0.5, group=disp_group)
+slPct         = input.float(1.0, "Stop Loss %", minval=0.1, step=0.5, group=disp_group)
+fastColor     = input.color(color.green, "Fast EMA Color", group=disp_group)
+slowColor     = input.color(color.red, "Slow EMA Color", group=disp_group)
 
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
 ema_f = ta.ema(ema_src, ema_f_len)
 ema_s = ta.ema(ema_src, ema_s_len)
 
-confirmation = close //ta.ema(ema_src, 1)
-fill_clr = ema_f > ema_s ? color.rgb(81, 255, 69, 50) : color.rgb(252, 72, 72, 50)
+bullish   = ema_f > ema_s
+crossUp   = ta.crossover(ema_f, ema_s)
+crossDown = ta.crossunder(ema_f, ema_s)
 
-fast = plot(ema_f)
-slow = plot(ema_s)
+// Trend strength — distance between EMAs relative to ATR
+atr     = ta.atr(14)
+spread  = math.abs(ema_f - ema_s)
+strong  = spread > atr * 1.5
 
-fill(fast, slow, fill_clr)
+// TP/SL reference levels from last cross
+var float lastCrossPrice = na
+if crossUp or crossDown
+    lastCrossPrice := close
 
-plot(confirmation, trackprice = true)
+tp_long  = lastCrossPrice * (1 + tpPct / 100)
+sl_long  = lastCrossPrice * (1 - slPct / 100)
+tp_short = lastCrossPrice * (1 - tpPct / 100)
+sl_short = lastCrossPrice * (1 + slPct / 100)
 
-//if ta.crossover(ema_f, ema_s)
-//    strategy.entry("enter long", strategy.long, 0.034, tp, sl) 
-//if ta.crossunder(ema_f, ema_s)
-//    strategy.entry("enter short", strategy.short, 0.034, tp, sl)
+// ==================================================================================
+// Plots
+// ==================================================================================
+pFast = plot(ema_f, "Fast EMA", color=fastColor, linewidth=2)
+pSlow = plot(ema_s, "Slow EMA", color=slowColor, linewidth=2)
+
+fill_clr = i_showFill ? (bullish ? color.new(color.green, 80) : color.new(color.red, 80)) : color(na)
+fill(pFast, pSlow, color=fill_clr, title="EMA Fill")
+
+// Cross signals
+plotshape(i_showSignals and crossUp,   style=shape.triangleup,   location=location.belowbar, color=color.green, text="Long",  textcolor=color.green, size=size.small, title="Bull Cross")
+plotshape(i_showSignals and crossDown, style=shape.triangledown, location=location.abovebar, color=color.red,   text="Short", textcolor=color.red,   size=size.small, title="Bear Cross")
+
+// TP/SL reference lines
+plot(i_showTP_SL and bullish ? tp_long : na,  "TP Long",  color=color.new(color.lime, 50), style=plot.style_linebr, linewidth=1)
+plot(i_showTP_SL and bullish ? sl_long : na,  "SL Long",  color=color.new(color.orange, 50), style=plot.style_linebr, linewidth=1)
+plot(i_showTP_SL and not bullish ? tp_short : na, "TP Short", color=color.new(color.lime, 50), style=plot.style_linebr, linewidth=1)
+plot(i_showTP_SL and not bullish ? sl_short : na, "SL Short", color=color.new(color.orange, 50), style=plot.style_linebr, linewidth=1)
+
+// Trend direction background
+bgcolor(strong and bullish ? color.new(color.green, 95) : strong and not bullish ? color.new(color.red, 95) : na, title="Strong Trend BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(crossUp,                "Bullish EMA Cross",     "Fast EMA crossed above slow EMA")
+alertcondition(crossDown,              "Bearish EMA Cross",     "Fast EMA crossed below slow EMA")
+alertcondition(crossUp and strong,     "Strong Bullish Cross",  "Bullish EMA cross with strong trend spread")
+alertcondition(crossDown and strong,   "Strong Bearish Cross",  "Bearish EMA cross with strong trend spread")

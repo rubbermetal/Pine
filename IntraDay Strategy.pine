@@ -1,37 +1,68 @@
-//@version=4
-strategy("Intraday Trading Strategy", overlay=true)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Define inputs
-fast_length = input(3, title="MACD Fast Length", type=input.integer)
-slow_length = input(10, title="MACD Slow Length", type=input.integer)
-macd_smooth = input(16, title="MACD Smoothing", type=input.integer)
-ema50_high_length = input(50, title="EMA 50 High Length", type=input.integer)
-ema50_low_length = input(50, title="EMA 50 Low Length", type=input.integer)
-ema15_close_length = input(15, title="EMA 15 Close Length", type=input.integer)
+//@version=6
+indicator("Intraday Trading", shorttitle="Intraday", overlay=true)
 
-// Calculate EMAs and MACD
-ema50_high = ema(high, ema50_high_length)
-ema50_low = ema(low, ema50_low_length)
-ema15_close = ema(close, ema15_close_length)
-sma_fast = sma(close, fast_length)
-sma_slow = sma(close, slow_length)
-macd_line = sma_fast - sma_slow
-signal_line = sma(macd_line, macd_smooth)
+// ==================== EMA Settings ====================
+var ema_group = "EMA Settings"
+ema50_high_length  = input.int(50, "EMA 50 High Length", minval=1, group=ema_group)
+ema50_low_length   = input.int(50, "EMA 50 Low Length", minval=1, group=ema_group)
+ema15_close_length = input.int(15, "EMA 15 Close Length", minval=1, group=ema_group)
 
-// Buy and sell conditions
-long_condition = crossover(macd_line, signal_line) and close > ema15_close and close > ema50_low and ema15_close > ema50_low
-short_condition = crossunder(macd_line, signal_line) and close < ema15_close and close < ema50_high and ema15_close < ema50_high
+// ==================== MACD Settings ====================
+var macd_group = "MACD Settings"
+fast_length = input.int(3, "Fast Length", minval=1, group=macd_group)
+slow_length = input.int(10, "Slow Length", minval=1, group=macd_group)
+macd_smooth = input.int(16, "Signal Smoothing", minval=1, group=macd_group)
 
-// Execute trades
-if (long_condition)
-    strategy.entry("Buy", strategy.long)
-if (short_condition)
-    strategy.entry("Sell", strategy.short)
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showSignals = input.bool(true, "Show Entry Signals", group=disp_group)
+i_showEMAs    = input.bool(true, "Show EMAs", group=disp_group)
+i_showCloud   = input.bool(true, "Show EMA 50 Cloud", group=disp_group)
 
-// Plot EMAs and MACD
-plot(ema50_high, color=color.red, title="EMA 50 High")
-plot(ema50_low, color=color.green, title="EMA 50 Low")
-plot(ema15_close, color=color.blue, title="EMA 15 Close")
-plot(macd_line, color=color.orange, title="MACD Line")
-plot(signal_line, color=color.gray, title="MACD Signal Line")
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+ema50_high  = ta.ema(high, ema50_high_length)
+ema50_low   = ta.ema(low, ema50_low_length)
+ema15_close = ta.ema(close, ema15_close_length)
+sma_fast    = ta.sma(close, fast_length)
+sma_slow    = ta.sma(close, slow_length)
+macd_line   = sma_fast - sma_slow
+signal_line = ta.sma(macd_line, macd_smooth)
 
+// Entry conditions — MACD cross + price above/below EMA structure
+long_condition  = ta.crossover(macd_line, signal_line) and close > ema15_close and close > ema50_low and ema15_close > ema50_low
+short_condition = ta.crossunder(macd_line, signal_line) and close < ema15_close and close < ema50_high and ema15_close < ema50_high
+
+// Trend state
+bullTrend = close > ema15_close and ema15_close > ema50_low
+bearTrend = close < ema15_close and ema15_close < ema50_high
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+pHigh = plot(i_showEMAs ? ema50_high : na, "EMA 50 High", color=color.new(color.red, 30), linewidth=1)
+pLow  = plot(i_showEMAs ? ema50_low : na, "EMA 50 Low", color=color.new(color.green, 30), linewidth=1)
+plot(i_showEMAs ? ema15_close : na, "EMA 15 Close", color=color.new(color.blue, 0), linewidth=2)
+
+// EMA 50 cloud fill
+cloudColor = i_showCloud ? (bullTrend ? color.new(color.green, 90) : bearTrend ? color.new(color.red, 90) : color.new(color.gray, 95)) : color(na)
+fill(pHigh, pLow, color=cloudColor, title="EMA 50 Cloud")
+
+// Entry signals
+plotshape(i_showSignals and long_condition,  style=shape.triangleup,   location=location.belowbar, color=color.green, text="Long",  textcolor=color.green, size=size.small, title="Long Entry")
+plotshape(i_showSignals and short_condition, style=shape.triangledown, location=location.abovebar, color=color.red,   text="Short", textcolor=color.red,   size=size.small, title="Short Entry")
+
+// Trend background
+bgcolor(bullTrend ? color.new(color.green, 95) : bearTrend ? color.new(color.red, 95) : na, title="Trend BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(long_condition,  "Intraday Long Signal",  "MACD crossover with bullish EMA structure")
+alertcondition(short_condition, "Intraday Short Signal", "MACD crossunder with bearish EMA structure")
+alertcondition(bullTrend and not bullTrend[1], "Bullish Trend Start", "Price moved above EMA 15 and EMA 50 structure")
+alertcondition(bearTrend and not bearTrend[1], "Bearish Trend Start", "Price moved below EMA 15 and EMA 50 structure")

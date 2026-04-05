@@ -1,48 +1,96 @@
-//@version=4
-study("Support and Resistance Levels with Bands", overlay=true)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Find support and resistance levels
-last_high = security(syminfo.tickerid, "D", highest(high, 200))
-last_low = security(syminfo.tickerid, "D", lowest(low, 200))
-current_support = security(syminfo.tickerid, "60", lowest(low, 200))
+//@version=6
+indicator("Custom Reversal", shorttitle="Rev", overlay=true)
 
-emaLength = input(10, "EMA Length", minval=1)
+// ==================== Settings ====================
+var rev_group = "Reversal Detection"
+pivotLeft   = input.int(5, "Pivot Left Bars", minval=2, group=rev_group)
+pivotRight  = input.int(2, "Pivot Right Bars", minval=1, group=rev_group)
+rsiLen      = input.int(14, "RSI Length", minval=1, group=rev_group)
+rsiOB       = input.int(70, "RSI Overbought", minval=50, maxval=100, group=rev_group)
+rsiOS       = input.int(30, "RSI Oversold", minval=0, maxval=50, group=rev_group)
+volMulti    = input.float(1.3, "Volume Confirmation Multiplier", minval=1.0, step=0.1, group=rev_group)
 
-// Calculate the smoothing factor
-alpha = 2 / (emaLength + 1)
+var disp_group = "Display Settings"
+i_showSignals  = input.bool(true, "Show Reversal Signals", group=disp_group)
+i_showPivots   = input.bool(true, "Show Pivot Points", group=disp_group)
+i_useVolConf   = input.bool(true, "Require Volume Confirmation", group=disp_group)
+i_useRSIConf   = input.bool(true, "Require RSI Confirmation", group=disp_group)
 
-// Define the variable to store the zero lag EMA
-var float emaZeroLag = na
- 
-// Calculate the zero lag EMA
-emaZeroLag := alpha * (close - security(syminfo.tickerid, timeframe.period, ema(close, emaLength))) + security(syminfo.tickerid, timeframe.period, ema(close, emaLength))
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+rsi = ta.rsi(close, rsiLen)
+avgVol = ta.sma(volume, 20)
+highVol = volume > avgVol * volMulti
 
-// Determine if the support is broken
-support_broken = crossover(low, current_support)
+// Pivot detection
+pivHigh = ta.pivothigh(high, pivotLeft, pivotRight)
+pivLow  = ta.pivotlow(low, pivotLeft, pivotRight)
 
-// Reset the support level when it's broken
-var float support_level = na
-if support_broken
-    support_level := current_support
-else
-    support_level := nz(support_level[1], current_support)
+// Engulfing patterns (strongest single-signal reversals)
+bullEngulf = close > open and close > open[1] and open < close[1] and close[1] < open[1] and (close - open) > math.abs(close[1] - open[1])
+bearEngulf = close < open and close < open[1] and open > close[1] and close[1] > open[1] and math.abs(close - open) > (close[1] - open[1])
 
-// Calculate 0.5% higher and lower resistance and support levels
-resistance_high = last_high * 1.005
-resistance_low = last_high * 0.995
-support_high = last_low * 1.005
-support_low = last_low * 0.995
+// Pin bar / hammer / shooting star
+bodySize = math.abs(close - open)
+upperWick = high - math.max(close, open)
+lowerWick = math.min(close, open) - low
+totalRange = high - low
 
-// Only plot unbroken support and resistance levels
-plot(last_high >= high ? resistance_high : na, title="Resistance High", color=bar_index % 2 == 0 ? color.red : #00000000, linewidth=2)
-plot(last_high >= high ? resistance_low : na, title="Resistance Low", color=bar_index % 2 == 0 ? color.red : #00000000, linewidth=2)
-plot(last_low <= low ? support_high : na, title="Support High", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
-plot(last_low <= low ? support_low : na, title="Support Low", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
-plot(support_level <= low ? current_support : na, title="Key Support Level", color=bar_index % 2 == 0 ? color.green : #00000000, linewidth=2)
-// Plot the zero lag EMA
-plot(emaZeroLag, color=color.green, linewidth=2, title="Zero Lag EMA")
-// Fill the area between resistance lines
-fill(plot(last_high >= high ? resistance_high : na, title="Resistance Fill High", color=#00000000), plot(last_high >= high ? resistance_low : na, title="Resistance Fill Low", color=#00000000), color.red, transp=70)
+bullPin = totalRange > 0 and lowerWick > bodySize * 2 and upperWick < bodySize * 0.5 and totalRange > ta.atr(14) * 0.5
+bearPin = totalRange > 0 and upperWick > bodySize * 2 and lowerWick < bodySize * 0.5 and totalRange > ta.atr(14) * 0.5
 
-// Fill the area between support lines
-fill(plot(last_low <= low ? support_high : na, title="Support Fill High", color=#00000000), plot(last_low <= low ? support_low : na, title="Support Fill Low", color=#00000000), color.green, transp=70)
+// Swing failure pattern (price makes new high/low but immediately reverses)
+newHigh = high > ta.highest(high, 10)[1]
+newLow  = low < ta.lowest(low, 10)[1]
+swingFailBull = newLow and close > open and close > (high + low) / 2
+swingFailBear = newHigh and close < open and close < (high + low) / 2
+
+// Composite reversal signals with optional filters
+volOk  = not i_useVolConf or highVol
+rsiOkBull = not i_useRSIConf or rsi < rsiOS or rsi[1] < rsiOS
+rsiOkBear = not i_useRSIConf or rsi > rsiOB or rsi[1] > rsiOB
+
+bullRev = volOk and rsiOkBull and (bullEngulf or bullPin or swingFailBull)
+bearRev = volOk and rsiOkBear and (bearEngulf or bearPin or swingFailBear)
+
+// Pattern name for labels
+f_bullName() =>
+    bullEngulf ? "Engulf" : bullPin ? "Pin Bar" : swingFailBull ? "Swing Fail" : ""
+
+f_bearName() =>
+    bearEngulf ? "Engulf" : bearPin ? "Pin Bar" : swingFailBear ? "Swing Fail" : ""
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+
+// Pivot point markers
+plotshape(i_showPivots and not na(pivHigh), style=shape.circle, location=location.abovebar, color=color.new(color.red, 40), size=size.tiny, offset=-pivotRight, title="Pivot High")
+plotshape(i_showPivots and not na(pivLow),  style=shape.circle, location=location.belowbar, color=color.new(color.green, 40), size=size.tiny, offset=-pivotRight, title="Pivot Low")
+
+// Reversal signals
+plotshape(i_showSignals and bullRev, style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.small, title="Bull Reversal")
+plotshape(i_showSignals and bearRev, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, title="Bear Reversal")
+
+// Pattern name labels
+if i_showSignals and bullRev
+    label.new(bar_index, low, f_bullName(), style=label.style_none, textcolor=color.green, size=size.small)
+if i_showSignals and bearRev
+    label.new(bar_index, high, f_bearName(), style=label.style_none, textcolor=color.red, size=size.small)
+
+// Signal background
+bgcolor(bullRev ? color.new(color.green, 92) : bearRev ? color.new(color.red, 92) : na, title="Reversal BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(bullRev,     "Bullish Reversal",        "Bullish reversal pattern detected with confirmations")
+alertcondition(bearRev,     "Bearish Reversal",        "Bearish reversal pattern detected with confirmations")
+alertcondition(bullEngulf,  "Bullish Engulfing",       "Bullish engulfing candle detected")
+alertcondition(bearEngulf,  "Bearish Engulfing",       "Bearish engulfing candle detected")
+alertcondition(swingFailBull, "Bullish Swing Failure", "New low followed by bullish close — swing failure")
+alertcondition(swingFailBear, "Bearish Swing Failure", "New high followed by bearish close — swing failure")

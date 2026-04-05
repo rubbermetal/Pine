@@ -2,104 +2,216 @@
 // © claygrace74
 
 //@version=6
-indicator("Support and Resistance", shorttitle="S/R", overlay=true)
+indicator("Support and Resistance", shorttitle="S/R", overlay=true, max_lines_count=500, max_labels_count=500)
 
-// ==================== S/R Settings ====================
-var sr_group = "S/R Settings"
-dailyLen  = input.int(200, "Daily S/R Lookback", minval=10, group=sr_group)
-hourlyLen = input.int(200, "Hourly Support Lookback", minval=10, group=sr_group)
-bandPct   = input.float(0.5, "Band Width (%)", minval=0.1, step=0.1, group=sr_group)
-
-// ==================== EMA Settings ====================
-var ema_group = "Zero-Lag EMA"
-emaLength   = input.int(10, "EMA Length", minval=1, group=ema_group)
-i_showEMA   = input.bool(true, "Show Zero-Lag EMA", group=ema_group)
+// ==================== Pivot Settings ====================
+var piv_group = "Pivot Detection"
+leftBars   = input.int(10, "Left Bars", minval=2, tooltip="Bars to the left of pivot point", group=piv_group)
+rightBars  = input.int(10, "Right Bars", minval=2, tooltip="Bars to the right to confirm pivot", group=piv_group)
+maxLevels  = input.int(8, "Max Levels Shown", minval=2, maxval=20, group=piv_group)
+zonePct    = input.float(0.3, "Zone Width (%)", minval=0.05, step=0.05, tooltip="S/R zone thickness as % of price", group=piv_group)
 
 // ==================== Display Settings ====================
 var disp_group = "Display Settings"
-i_showBands    = input.bool(true, "Show S/R Bands", group=disp_group)
+i_showZones    = input.bool(true, "Show S/R Zones", group=disp_group)
 i_showSignals  = input.bool(true, "Show Break/Test Signals", group=disp_group)
+i_showLabels   = input.bool(true, "Show Level Labels", group=disp_group)
+i_showEMA      = input.bool(true, "Show Zero-Lag EMA", group=disp_group)
+emaLen         = input.int(21, "EMA Length", minval=1, group=disp_group)
 resColor       = input.color(color.red, "Resistance Color", group=disp_group)
 supColor       = input.color(color.green, "Support Color", group=disp_group)
 
 // ==================================================================================
-// S/R Level Calculations
+// Pivot Detection
+// ==================================================================================
+pivHigh = ta.pivothigh(high, leftBars, rightBars)
+pivLow  = ta.pivotlow(low, leftBars, rightBars)
+
+// ==================================================================================
+// Level Tracking (arrays of price levels + metadata)
+// ==================================================================================
+var float[] resLevels  = array.new_float(0)
+var int[]   resTouches = array.new_int(0)
+var int[]   resBars    = array.new_int(0)
+var line[]  resLines   = array.new_line(0)
+var box[]   resBoxes   = array.new_box(0)
+var label[] resLabels  = array.new_label(0)
+
+var float[] supLevels  = array.new_float(0)
+var int[]   supTouches = array.new_int(0)
+var int[]   supBars    = array.new_int(0)
+var line[]  supLines   = array.new_line(0)
+var box[]   supBoxes   = array.new_box(0)
+var label[] supLabels  = array.new_label(0)
+
+// Zone width in price
+zoneWidth = close * zonePct / 100
+
+// Check if a new level is near an existing one (merge)
+f_nearExisting(levels, price, threshold) =>
+    bool found = false
+    int idx = -1
+    for i = 0 to array.size(levels) - 1
+        if math.abs(array.get(levels, i) - price) <= threshold
+            found := true
+            idx := i
+            break
+    [found, idx]
+
+// Add or merge a resistance level
+if not na(pivHigh)
+    [exists, idx] = f_nearExisting(resLevels, pivHigh, zoneWidth)
+    if exists and idx >= 0
+        array.set(resTouches, idx, array.get(resTouches, idx) + 1)
+        array.set(resBars, idx, bar_index - rightBars)
+    else
+        array.push(resLevels, pivHigh)
+        array.push(resTouches, 1)
+        array.push(resBars, bar_index - rightBars)
+
+// Add or merge a support level
+if not na(pivLow)
+    [exists, idx] = f_nearExisting(supLevels, pivLow, zoneWidth)
+    if exists and idx >= 0
+        array.set(supTouches, idx, array.get(supTouches, idx) + 1)
+        array.set(supBars, idx, bar_index - rightBars)
+    else
+        array.push(supLevels, pivLow)
+        array.push(supTouches, 1)
+        array.push(supBars, bar_index - rightBars)
+
+// ==================================================================================
+// Prune broken levels (price closed decisively through)
+// ==================================================================================
+// Remove resistance levels that price closed above
+if array.size(resLevels) > 0
+    for i = array.size(resLevels) - 1 to 0
+        lvl = array.get(resLevels, i)
+        if close > lvl + zoneWidth * 2 and close[1] > lvl + zoneWidth * 2
+            array.remove(resLevels, i)
+            array.remove(resTouches, i)
+            array.remove(resBars, i)
+
+// Remove support levels that price closed below
+if array.size(supLevels) > 0
+    for i = array.size(supLevels) - 1 to 0
+        lvl = array.get(supLevels, i)
+        if close < lvl - zoneWidth * 2 and close[1] < lvl - zoneWidth * 2
+            array.remove(supLevels, i)
+            array.remove(supTouches, i)
+            array.remove(supBars, i)
+
+// Cap array sizes to maxLevels (keep most-touched levels)
+f_capLevels(levels, touches, bars, maxSize) =>
+    while array.size(levels) > maxSize
+        // Find level with fewest touches
+        int minIdx = 0
+        int minVal = array.get(touches, 0)
+        for i = 1 to array.size(touches) - 1
+            if array.get(touches, i) < minVal
+                minVal := array.get(touches, i)
+                minIdx := i
+        array.remove(levels, minIdx)
+        array.remove(touches, minIdx)
+        array.remove(bars, minIdx)
+
+f_capLevels(resLevels, resTouches, resBars, maxLevels)
+f_capLevels(supLevels, supTouches, supBars, maxLevels)
+
+// ==================================================================================
+// Draw S/R Zones
 // ==================================================================================
 
-// Daily highest high and lowest low as major S/R
-last_high       = request.security(syminfo.tickerid, "D", ta.highest(high, dailyLen), lookahead=barmerge.lookahead_off)
-last_low        = request.security(syminfo.tickerid, "D", ta.lowest(low, dailyLen), lookahead=barmerge.lookahead_off)
-current_support = request.security(syminfo.tickerid, "60", ta.lowest(low, hourlyLen), lookahead=barmerge.lookahead_off)
+// Clear previous drawings
+for ln in resLines
+    line.delete(ln)
+array.clear(resLines)
+for bx in resBoxes
+    box.delete(bx)
+array.clear(resBoxes)
+for lb in resLabels
+    label.delete(lb)
+array.clear(resLabels)
+for ln in supLines
+    line.delete(ln)
+array.clear(supLines)
+for bx in supBoxes
+    box.delete(bx)
+array.clear(supBoxes)
+for lb in supLabels
+    label.delete(lb)
+array.clear(supLabels)
 
-// Band levels (percentage above/below S/R)
-mult = bandPct / 100
-resistance_high = last_high * (1 + mult)
-resistance_low  = last_high * (1 - mult)
-support_high    = last_low * (1 + mult)
-support_low     = last_low * (1 - mult)
+// Draw resistance zones
+if i_showZones
+    for i = 0 to array.size(resLevels) - 1
+        lvl     = array.get(resLevels, i)
+        touches = array.get(resTouches, i)
+        startBar = array.get(resBars, i)
+        // Opacity based on touches: more touches = more opaque
+        alpha = math.max(95 - touches * 10, 60)
+        ln = line.new(startBar, lvl, bar_index + 20, lvl, color=color.new(resColor, alpha - 30), width=1, style=line.style_solid)
+        array.push(resLines, ln)
+        bx = box.new(startBar, lvl + zoneWidth, bar_index + 20, lvl - zoneWidth, bgcolor=color.new(resColor, alpha), border_color=color(na))
+        array.push(resBoxes, bx)
+        if i_showLabels
+            lb = label.new(bar_index + 22, lvl, "R" + str.tostring(touches), style=label.style_none, textcolor=color.new(resColor, alpha - 40), size=size.small)
+            array.push(resLabels, lb)
 
-// Dynamic support tracking — resets when broken
-support_broken = ta.crossover(low, current_support)
-var float support_level = na
-support_level := support_broken ? current_support : nz(support_level[1], current_support)
+// Draw support zones
+if i_showZones
+    for i = 0 to array.size(supLevels) - 1
+        lvl     = array.get(supLevels, i)
+        touches = array.get(supTouches, i)
+        startBar = array.get(supBars, i)
+        alpha = math.max(95 - touches * 10, 60)
+        ln = line.new(startBar, lvl, bar_index + 20, lvl, color=color.new(supColor, alpha - 30), width=1, style=line.style_solid)
+        array.push(supLines, ln)
+        bx = box.new(startBar, lvl + zoneWidth, bar_index + 20, lvl - zoneWidth, bgcolor=color.new(supColor, alpha), border_color=color(na))
+        array.push(supBoxes, bx)
+        if i_showLabels
+            lb = label.new(bar_index + 22, lvl, "S" + str.tostring(touches), style=label.style_none, textcolor=color.new(supColor, alpha - 40), size=size.small)
+            array.push(supLabels, lb)
+
+// ==================================================================================
+// Signal Detection — proximity, breakout, retest
+// ==================================================================================
+bool nearRes = false
+bool nearSup = false
+bool resBreak = false
+bool supBreak = false
+
+if array.size(resLevels) > 0
+    for i = 0 to array.size(resLevels) - 1
+        lvl = array.get(resLevels, i)
+        if high >= lvl - zoneWidth and high <= lvl + zoneWidth
+            nearRes := true
+        if close > lvl + zoneWidth and close[1] <= lvl + zoneWidth
+            resBreak := true
+
+if array.size(supLevels) > 0
+    for i = 0 to array.size(supLevels) - 1
+        lvl = array.get(supLevels, i)
+        if low <= lvl + zoneWidth and low >= lvl - zoneWidth
+            nearSup := true
+        if close < lvl - zoneWidth and close[1] >= lvl - zoneWidth
+            supBreak := true
+
+plotshape(i_showSignals and resBreak, style=shape.triangleup,   location=location.abovebar, color=color.lime,   text="Break", textcolor=color.lime,   size=size.tiny, title="Resistance Break")
+plotshape(i_showSignals and supBreak, style=shape.triangledown, location=location.belowbar, color=color.orange, text="Break", textcolor=color.orange, size=size.tiny, title="Support Break")
 
 // ==================================================================================
 // Zero-Lag EMA
 // ==================================================================================
-emaStd    = ta.ema(close, emaLength)
-emaZeroLag = 2 * emaStd - ta.ema(emaStd, emaLength)
-
-// ==================================================================================
-// Signal Detection
-// ==================================================================================
-
-// Resistance test/break
-nearResistance = high >= resistance_low and high <= resistance_high
-resBreakout    = close > resistance_high and close[1] <= resistance_high[1]
-
-// Support test/break
-nearSupport    = low <= support_high and low >= support_low
-supBreakdown   = close < support_low and close[1] >= support_low[1]
-
-// Retest signals — price returns to broken level
-resRetest = close[1] > resistance_high[1] and low <= resistance_high and close > resistance_high
-supRetest = close[1] < support_low[1] and high >= support_low and close < support_low
-
-// ==================================================================================
-// Plots
-// ==================================================================================
-
-// Resistance band
-resActive = last_high >= high
-pResH = plot(resActive and i_showBands ? resistance_high : na, "Resistance High", color=color.new(resColor, 30), linewidth=1, style=plot.style_linebr)
-pResL = plot(resActive and i_showBands ? resistance_low : na, "Resistance Low", color=color.new(resColor, 30), linewidth=1, style=plot.style_linebr)
-fill(pResH, pResL, color=resActive and i_showBands ? color.new(resColor, 85) : color(na), title="Resistance Band")
-
-// Support band
-supActive = last_low <= low
-pSupH = plot(supActive and i_showBands ? support_high : na, "Support High", color=color.new(supColor, 30), linewidth=1, style=plot.style_linebr)
-pSupL = plot(supActive and i_showBands ? support_low : na, "Support Low", color=color.new(supColor, 30), linewidth=1, style=plot.style_linebr)
-fill(pSupH, pSupL, color=supActive and i_showBands ? color.new(supColor, 85) : color(na), title="Support Band")
-
-// Key hourly support
-plot(support_level <= low ? current_support : na, "Key Support", color=color.new(supColor, 20), linewidth=2, style=plot.style_linebr)
-
-// Zero-lag EMA
-emaColor = emaZeroLag > emaZeroLag[1] ? color.green : color.red
+emaStd     = ta.ema(close, emaLen)
+emaZeroLag = 2 * emaStd - ta.ema(emaStd, emaLen)
+emaColor   = emaZeroLag > emaZeroLag[1] ? color.green : color.red
 plot(i_showEMA ? emaZeroLag : na, "Zero-Lag EMA", color=emaColor, linewidth=2)
-
-// Break/test signals
-plotshape(i_showSignals and resBreakout, style=shape.triangleup,   location=location.abovebar, color=color.lime,   text="Break", textcolor=color.lime,   size=size.tiny, title="Resistance Breakout")
-plotshape(i_showSignals and supBreakdown,style=shape.triangledown, location=location.belowbar, color=color.orange, text="Break", textcolor=color.orange, size=size.tiny, title="Support Breakdown")
-plotshape(i_showSignals and resRetest,   style=shape.circle, location=location.abovebar, color=color.new(color.lime, 30),   size=size.tiny, title="Resistance Retest")
-plotshape(i_showSignals and supRetest,   style=shape.circle, location=location.belowbar, color=color.new(color.orange, 30), size=size.tiny, title="Support Retest")
 
 // ==================================================================================
 // Alert Conditions
 // ==================================================================================
-alertcondition(resBreakout,    "Resistance Breakout",  "Price broke above resistance band")
-alertcondition(supBreakdown,   "Support Breakdown",    "Price broke below support band")
-alertcondition(resRetest,      "Resistance Retest",    "Price retesting broken resistance from above")
-alertcondition(supRetest,      "Support Retest",       "Price retesting broken support from below")
-alertcondition(nearResistance, "Near Resistance",      "Price is testing the resistance band")
-alertcondition(nearSupport,    "Near Support",         "Price is testing the support band")
+alertcondition(resBreak,  "Resistance Breakout", "Price broke above a resistance zone")
+alertcondition(supBreak,  "Support Breakdown",   "Price broke below a support zone")
+alertcondition(nearRes,   "Near Resistance",     "Price testing a resistance zone")
+alertcondition(nearSup,   "Near Support",        "Price testing a support zone")

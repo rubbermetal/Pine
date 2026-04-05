@@ -1,44 +1,74 @@
-//@version=5
-strategy("Scalping Strategy with Bollinger Bands, CCI, and ROC", overlay=true, shorttitle="Scalping BB CCI ROC", pyramiding=1)
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
 
-// Define inputs
-bb_length = input(title="Bollinger Bands Length", defval=20)
-bb_std = input(title="Bollinger Bands Standard Deviations", defval=2)
-cci_length = input(title="CCI Length", defval=14)
-cci_level = input(title="CCI Overbought/Oversold Threshold", defval=100)
-roc_length = input(title="ROC Length", defval=9)
-roc_level = input(title="ROC Threshold", defval=1)
+//@version=6
+indicator("Scalping BB CCI ROC", shorttitle="Scalp", overlay=true)
 
-// Calculate Bollinger Bands
-ma = ta.sma(close, bb_length)
+// ==================== Bollinger Band Settings ====================
+var bb_group = "Bollinger Bands"
+bb_length = input.int(20, "BB Length", minval=5, group=bb_group)
+bb_std    = input.float(2.0, "BB StdDev", minval=0.5, step=0.5, group=bb_group)
+
+// ==================== Oscillator Settings ====================
+var osc_group = "Oscillator Settings"
+cci_length = input.int(14, "CCI Length", minval=1, group=osc_group)
+cci_level  = input.int(100, "CCI OB/OS Threshold", minval=50, group=osc_group)
+roc_length = input.int(9, "ROC Length", minval=1, group=osc_group)
+roc_level  = input.float(1.0, "ROC Threshold", minval=0.1, step=0.1, group=osc_group)
+
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showSignals = input.bool(true, "Show Entry Signals", group=disp_group)
+i_showBB      = input.bool(true, "Show Bollinger Bands", group=disp_group)
+i_showSqueeze = input.bool(true, "Show BB Squeeze", group=disp_group)
+
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+ma       = ta.sma(close, bb_length)
 bb_width = ta.stdev(close, bb_length) * bb_std
 bb_upper = ma + bb_width
 bb_lower = ma - bb_width
+bb_pct   = (close - bb_lower) / (bb_upper - bb_lower)
 
-// Calculate other indicators
 cci = ta.cci(close, cci_length)
 roc = ta.roc(close, roc_length)
 
-// Generate signals
-long_signal = close < bb_lower and cci < -cci_level and roc < -roc_level
+// Entry signals — price at BB extreme + CCI extreme + ROC extreme
+long_signal  = close < bb_lower and cci < -cci_level and roc < -roc_level
 short_signal = close > bb_upper and cci > cci_level and roc > roc_level
 
-// Execute trades
-if long_signal
-    strategy.entry("Long", strategy.long)
-if short_signal
-    strategy.entry("Short", strategy.short)
+// BB squeeze detection (volatility contraction)
+bbWidth   = (bb_upper - bb_lower) / ma
+avgBBWidth = ta.sma(bbWidth, 50)
+squeeze   = bbWidth < avgBBWidth * 0.75
 
-// Plot indicators
-plot(bb_upper, color=color.red, linewidth=1, title="Bollinger Bands Upper")
-plot(ma, color=color.blue, linewidth=1, title="Bollinger Bands Middle")
-plot(bb_lower, color=color.red, linewidth=1, title="Bollinger Bands Lower")
-hline(cci_level, "CCI Overbought", color=color.red)
-hline(-cci_level, "CCI Oversold", color=color.green)
-plot(cci, color=color.blue, linewidth=1, title="CCI")
-hline(roc_level, "ROC Level", color=color.red)
-hline(-roc_level, "ROC Level", color=color.green)
-plot(roc, color=color.purple, linewidth=1, title="ROC")
+// ==================================================================================
+// Plots
+// ==================================================================================
+pUpper = plot(i_showBB ? bb_upper : na, "BB Upper", color=color.new(color.red, 30), linewidth=1)
+pMA    = plot(i_showBB ? ma : na, "BB Mid", color=color.new(color.blue, 30), linewidth=1)
+pLower = plot(i_showBB ? bb_lower : na, "BB Lower", color=color.new(color.green, 30), linewidth=1)
 
-bgcolor(long_signal ? color.new(color.green, 90) : na)
-bgcolor(short_signal ? color.new(color.red, 90) : na)
+// BB fill — color by where price sits in the bands
+fillColor = bb_pct > 0.8 ? color.new(color.red, 85) : bb_pct < 0.2 ? color.new(color.green, 85) : color.new(color.gray, 92)
+fill(pUpper, pLower, color=i_showBB ? fillColor : color(na), title="BB Fill")
+
+// Entry signals
+plotshape(i_showSignals and long_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, text="Scalp L", textcolor=color.green, size=size.small, title="Scalp Long")
+plotshape(i_showSignals and short_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   text="Scalp S", textcolor=color.red,   size=size.small, title="Scalp Short")
+
+// Squeeze detection
+bgcolor(i_showSqueeze and squeeze ? color.new(color.yellow, 92) : na, title="BB Squeeze")
+plotshape(i_showSqueeze and squeeze and not squeeze[1], style=shape.diamond, location=location.bottom, color=color.new(color.yellow, 0), text="Squeeze", textcolor=color.yellow, size=size.tiny, title="Squeeze Start")
+
+// Signal background
+bgcolor(long_signal ? color.new(color.green, 90) : short_signal ? color.new(color.red, 90) : na, title="Signal BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(long_signal,                "Scalp Long Signal",  "BB lower + CCI oversold + ROC negative")
+alertcondition(short_signal,               "Scalp Short Signal", "BB upper + CCI overbought + ROC positive")
+alertcondition(squeeze and not squeeze[1], "BB Squeeze Start",   "Bollinger Band squeeze detected — low volatility")
+alertcondition(not squeeze and squeeze[1], "BB Squeeze Release",  "Bollinger Band squeeze released — breakout likely")
