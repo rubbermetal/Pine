@@ -9,10 +9,11 @@ indicator("Quad Rotation 9 3", shorttitle="QR 9/3")
 
 // ==================== Stochastic Inputs ====================
 var stoch_group = "Stochastic Settings"
+k1source = input.source(close, "Stoch 9/3 Source", group=stoch_group)
 periodK1 = input.int(9,  title="%K1 Length", minval=1, group=stoch_group)
 smoothK1 = input.int(3,  title="%K1 Smoothing", minval=1, group=stoch_group)
 periodD1 = input.int(3,  title="%D1 Smoothing", minval=1, group=stoch_group)
-k1 = ta.sma(ta.stoch(close, high, low, periodK1), smoothK1)
+k1 = ta.sma(ta.stoch(k1source, high, low, periodK1), smoothK1)
 d1 = ta.sma(k1, periodD1)
 
 periodK2 = input.int(14, title="%K2 Length", minval=1, group=stoch_group)
@@ -33,212 +34,98 @@ periodD4 = input.int(10, title="%D4 Smoothing", minval=1, group=stoch_group)
 k4 = ta.sma(ta.stoch(close, high, low, periodK4), smoothK4)
 d4 = ta.sma(k4, periodD4)
 
+// ==================== DTRS Strategy Settings ====================
+var dtrs_group = "DTRS Strategy Settings"
+rot_window = input.int(20, "Rotation Window (bars)", minval=5, maxval=100, tooltip="Max bars for sequential rotation to complete (fast→slow)", group=dtrs_group)
+
+// ==================== RSI Divergence Settings ====================
+var rsi_group = "RSI Divergence Settings"
+rsi_fast_len = input.int(5,  "Fast RSI Length", minval=1, group=rsi_group)
+rsi_slow_len = input.int(14, "Slow RSI Length", minval=1, group=rsi_group)
+
 // ==================== Display Settings ====================
 var disp_group = "Display Settings"
-bool i_showDarkMode = input.bool(false, "Use Dark Mode", group=disp_group)
-bool i_showRRC      = input.bool(false, "Show RRC Histogram", group=disp_group)
-bool i_showSignals  = input.bool(true, "Show K/D Cross Signals", group=disp_group)
-bool i_showRotation = input.bool(true, "Show Rotation Status", group=disp_group)
-
-// ==================== Golden Cross (EMA 50 and EMA 200) ====================
-var ema_group = '========== Golden Cross (EMA 50 and EMA 200) ==========='
-gcslowsrc   = input.source(title='Slow Source', defval=close, group=ema_group)
-int gcslowlen  = input.int(title='Slow Length', defval=200, minval=1, group=ema_group)
-gcfastsrc   = input.source(title='Fast Source', defval=close, group=ema_group)
-int gcfastlen  = input.int(title='Fast Length', defval=50, minval=1, group=ema_group)
-bool gcfastsmooth = input.bool(title='Smooth Fast Line', defval=false, group=ema_group)
-bool gcslowsmooth = input.bool(title='Smooth Slow Line', defval=false, group=ema_group)
-
-// ==================== MACD Settings ====================
-var MACD_group = '===================== MacD Settings ===================='
-macdsrc        = input.source(title='MacD Source', defval=close, group=MACD_group)
-int macdfastlen   = input.int(title='MacD Fast Length', defval=12, minval=1, group=MACD_group)
-int macdslowlen   = input.int(title='MacD Slow Length', defval=34, minval=1, group=MACD_group)
-int macdsignallen = input.int(title='MacD Signal Smoothing', defval=9, minval=1, maxval=50, group=MACD_group)
-
-// ==================== VWAP Settings ====================
-var vwap_group = '====================== VWAP Settings ===================='
-bool hideonDWM = input.bool(false, title="Hide VWAP on 1D or Above", group=vwap_group)
-var anchor     = input.string(defval="Session", title="Anchor Period", options=["Session", "Week", "Month", "Quarter", "Year", "Decade", "Century", "Earnings", "Dividends", "Splits"], group=vwap_group)
-vwap_src       = input.source(title="Source", defval=hlc3, group=vwap_group)
-
-// ==================== Look Back ====================
-var lookback_group = '=============== Look Back Period Settings =============='
-int i_lookback = input.int(title='Statistics', defval=100, minval=1, group=lookback_group)
-
-// ==================== RSI Settings ====================
-var RSI_group = '============= RSI and Stochastic Settings =============='
-rsisrc         = input.source(title='RSI Source', defval=close, group=RSI_group)
-int rsilen        = input.int(title='RSI Length', defval=14, minval=1, group=RSI_group)
-rsi_fast_src   = input.source(title='Fast RSI Source', defval=close, group=RSI_group)
-int rsi_len_fast  = input.int(title='Fast RSI Length', defval=5, minval=1, group=RSI_group)
-
-// ==================== ADX Settings ====================
-var adx_group = '==================== ADX Settings ======================'
-int adxlen = input.int(title='ADX Length', minval=1, defval=14, group=adx_group)
-
-// ==================== ATR Settings ====================
-var tc_group = '================== ATR / SuperTrend ================='
-int atr_periods       = input.int(title="ATR Periods", defval=10, minval=1, group=tc_group)
-bool change_atr       = input.bool(title="Change ATR Calculation Method ?", defval=true, group=tc_group)
+bool i_showDarkMode      = input.bool(false, "Use Dark Mode", group=disp_group)
+bool i_showSignals       = input.bool(true,  "Show K/D Cross Signals", group=disp_group)
+bool i_showRotation      = input.bool(true,  "Show Rotation Status", group=disp_group)
+bool i_showSequence      = input.bool(true,  "Show Sequential Rotation", group=disp_group)
+bool i_showRSIDivergence = input.bool(true,  "Show RSI Divergence", group=disp_group)
+bool i_showHolyGrail     = input.bool(true,  "Show Holy Grail Signals", group=disp_group)
+bool i_showCounterTrend  = input.bool(true,  "Show Counter-Trend Warnings", group=disp_group)
+bool i_showConvergence   = input.bool(true,  "Show Convergence Band", group=disp_group)
 
 // ==================================================================================
-// Core Calculations
+// RSI Divergence (standalone)
 // ==================================================================================
-
-// --- ADX ---
-_tr = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
-dmPlus  = high - nz(high[1]) > nz(low[1]) - low ? math.max(high - nz(high[1]), 0) : 0
-dmMinus = nz(low[1]) - low > high - nz(high[1]) ? math.max(nz(low[1]) - low, 0) : 0
-
-smoothTR = 0.0
-smoothTR := nz(smoothTR[1]) - (nz(smoothTR[1]) / adxlen) + _tr
-sdmPlus = 0.0
-sdmPlus := nz(sdmPlus[1]) - (nz(sdmPlus[1]) / adxlen) + dmPlus
-sdmMinus = 0.0
-sdmMinus := nz(sdmMinus[1]) - (nz(sdmMinus[1]) / adxlen) + dmMinus
-
-DIPlus  = sdmPlus  / smoothTR * 100
-DIMinus = sdmMinus / smoothTR * 100
-dx  = math.abs(DIPlus - DIMinus) / (DIPlus + DIMinus) * 100
-adx = ta.sma(dx, adxlen)
-
-// --- ATR ---
-atr2 = ta.sma(ta.tr, atr_periods)
-atr  = change_atr ? ta.atr(atr_periods) : atr2
-
-// --- RSI Divergence ---
-rsi_up_fast   = ta.rma(math.max(ta.change(rsi_fast_src), 0), rsi_len_fast)
-rsi_down_fast = ta.rma(-math.min(ta.change(rsi_fast_src), 0), rsi_len_fast)
-rsi_fast      = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - (100 / (1 + rsi_up_fast / rsi_down_fast))
-
-rsi_up_slow   = ta.rma(math.max(ta.change(rsisrc), 0), rsilen)
-rsi_down_slow = ta.rma(-math.min(ta.change(rsisrc), 0), rsilen)
-rsi_slow      = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - (100 / (1 + rsi_up_slow / rsi_down_slow))
-
-divergence = rsi_fast - rsi_slow
-rsi_div    = divergence > 0 ? 'Bullish' : divergence < 0 ? 'Bearish' : 'Neutral'
-
-// --- Helper Functions ---
-smma(src, length) =>
-    sma  = ta.sma(src, length)
-    smma = 0.0
-    smma := na(smma[1]) ? sma : (smma[1] * (length - 1) + src) / length
-    smma
-
-bearish_gradient(os, float val = na, float lo = na, float hi = na) =>
-    use_dynamic = not na(val) and not na(lo) and not na(hi) and (hi != lo)
-    t_raw       = use_dynamic ? (hi - val) / (hi - lo) : na
-    t           = use_dynamic ? math.min(math.max(t_raw, 0.0), 1.0) : na
-    alpha_dyn   = use_dynamic ? math.round(100.0 * (1.0 - t)) : na
-    alpha_in    = math.round(math.min(math.max(nz(os, 100.0), 0.0), 100.0))
-    alpha       = nz(alpha_dyn, alpha_in)
-    color.rgb(255, 1, 1, alpha)
-
-bullish_gradient(os, float val = na, float lo = na, float hi = na) =>
-    use_dynamic = not na(val) and not na(lo) and not na(hi) and (hi != lo)
-    t_raw       = use_dynamic ? (val - lo) / (hi - lo) : na
-    t           = use_dynamic ? math.min(math.max(t_raw, 0.0), 1.0) : na
-    alpha_dyn   = use_dynamic ? math.round(100.0 * (1.0 - t)) : na
-    alpha_in    = math.round(math.min(math.max(nz(os, 100.0), 0.0), 100.0))
-    alpha       = nz(alpha_dyn, alpha_in)
-    color.rgb(0, 255, 42, alpha)
+rsi_f   = ta.rsi(close, rsi_fast_len)
+rsi_s   = ta.rsi(close, rsi_slow_len)
+rsi_div = rsi_f - rsi_s
 
 // ==================================================================================
-// RRC Pro Scoring Engine
+// Zone Constants
+// ==================================================================================
+upperBand = 80
+lowerBand = 20
+
+// ==================================================================================
+// DTRS Strategy Logic
 // ==================================================================================
 
-f_rrc_pro(min_adx=20.0, max_atr_mult=2.0, vol_mult=1.0, cooldownBars=3, thr_enter=55.0, thr_exit=45.0, smooth_len=5, use_div=true, div_boost=6.0) =>
-    gcslow = gcslowsmooth ? smma(gcslowsrc, gcslowlen) : ta.ema(gcslowsrc, gcslowlen)
-    gcfast = gcfastsmooth ? smma(gcfastsrc, gcfastlen) : ta.ema(gcfastsrc, gcfastlen)
-    ema200 = ta.ema(close, 200)
-    fastavg = ta.ema(macdsrc, macdfastlen)
-    slowavg = ta.ema(macdsrc, macdslowlen)
-    macd = fastavg - slowavg
-    macdsignal = ta.sma(macd, macdsignallen)
-    sma20 = ta.sma(close, 20)
+// --- Quad Alignment ---
+allOversold   = d1 < lowerBand and d2 < lowerBand and d3 < lowerBand and d4 < lowerBand
+allOverbought = d1 > upperBand and d2 > upperBand and d3 > upperBand and d4 > upperBand
 
-    avgVol       = ta.sma(volume, i_lookback)
-    dist_to_mean = math.abs(close - sma20) / nz(atr, 1e-6)
+// --- Individual Rotation (first bar of turn in extreme zone) ---
+turningUp1 = d1 < lowerBand and d1 > d1[1] and d1[1] <= d1[2]
+turningDn1 = d1 > upperBand and d1 < d1[1] and d1[1] >= d1[2]
+turningUp2 = d2 < lowerBand and d2 > d2[1] and d2[1] <= d2[2]
+turningDn2 = d2 > upperBand and d2 < d2[1] and d2[1] >= d2[2]
+turningUp3 = d3 < lowerBand and d3 > d3[1] and d3[1] <= d3[2]
+turningDn3 = d3 > upperBand and d3 < d3[1] and d3[1] >= d3[2]
+turningUp4 = d4 < lowerBand and d4 > d4[1] and d4[1] <= d4[2]
+turningDn4 = d4 > upperBand and d4 < d4[1] and d4[1] >= d4[2]
 
-    new_earnings  = request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
-    new_dividends = request.dividends(syminfo.tickerid, dividends.gross, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
-    new_split     = request.splits(syminfo.tickerid, splits.denominator, barmerge.gaps_on, barmerge.lookahead_on, ignore_invalid_symbol=true)
+// --- Sequential Rotation Detection ---
+// Track bars since each stochastic turned in its extreme zone
+// Bullish: fastest turns first (most bars ago), slowest most recently — all within window
+bs_up1 = ta.barssince(turningUp1)
+bs_up2 = ta.barssince(turningUp2)
+bs_up3 = ta.barssince(turningUp3)
+bs_up4 = ta.barssince(turningUp4)
 
-    isNewPeriod = switch anchor
-        "Earnings"  => not na(new_earnings)
-        "Dividends" => not na(new_dividends)
-        "Splits"    => not na(new_split)
-        "Session"   => timeframe.change("D")
-        "Week"      => timeframe.change("W")
-        "Month"     => timeframe.change("M")
-        "Quarter"   => timeframe.change("3M")
-        "Year"      => timeframe.change("12M")
-        "Decade"    => timeframe.change("12M") and year % 10 == 0
-        "Century"   => timeframe.change("12M") and year % 100 == 0
-        => false
+seq_bull = not na(bs_up1) and not na(bs_up2) and not na(bs_up3) and not na(bs_up4)
+     and bs_up1 > bs_up2 and bs_up2 > bs_up3 and bs_up3 > bs_up4
+     and bs_up4 < rot_window
+// Fire only on the bar the sequence completes (when slowest just turned)
+seq_bull_trigger = seq_bull and turningUp4
 
-    isEsdAnchor = anchor == "Earnings" or anchor == "Dividends" or anchor == "Splits"
-    if na(vwap_src[1]) and not isEsdAnchor
-        isNewPeriod := true
+bs_dn1 = ta.barssince(turningDn1)
+bs_dn2 = ta.barssince(turningDn2)
+bs_dn3 = ta.barssince(turningDn3)
+bs_dn4 = ta.barssince(turningDn4)
 
-    float vwap = na
-    if not (hideonDWM and timeframe.isdwm)
-        [_vwap, _stdevUpper, _] = ta.vwap(vwap_src, isNewPeriod, 1)
-        vwap := _vwap
+seq_bear = not na(bs_dn1) and not na(bs_dn2) and not na(bs_dn3) and not na(bs_dn4)
+     and bs_dn1 > bs_dn2 and bs_dn2 > bs_dn3 and bs_dn3 > bs_dn4
+     and bs_dn4 < rot_window
+seq_bear_trigger = seq_bear and turningDn4
 
-    trend_up       = (gcfast > gcslow) and (close > ema200)
-    trend_down     = (gcfast < gcslow) and (close < ema200)
-    mom_up         = macd > macdsignal
-    mom_down       = macd < macdsignal
-    price_ok_long  = (not na(vwap) ? close > vwap : true) and (close > sma20)
-    price_ok_short = (not na(vwap) ? close < vwap : true) and (close < sma20)
-    not_ext_long   = dist_to_mean <= max_atr_mult
-    not_ext_short  = dist_to_mean <= max_atr_mult
-    adx_ok         = (adx >= min_adx) and (adx >= nz(adx[1]))
-    vol_ok         = volume > (vol_mult * nz(avgVol))
-    cd_long_ok     = ta.barssince(ta.crossunder(gcfast, gcslow)) >= cooldownBars
-    cd_short_ok    = ta.barssince(ta.crossover(gcfast, gcslow))  >= cooldownBars
-    div_bonus_long  = use_div and (rsi_div == 'Bullish') ? div_boost : 0.0
-    div_bonus_short = use_div and (rsi_div == 'Bearish') ? div_boost : 0.0
+// --- Holy Grail: Quad alignment + RSI divergence confirmation ---
+holy_grail_bull = allOversold and rsi_div > 0
+holy_grail_bear = allOverbought and rsi_div < 0
 
-    score_long  = 0.0
-    score_long += trend_up       ? 22.0 : 0.0
-    score_long += mom_up         ? 18.0 : 0.0
-    score_long += price_ok_long  ? 16.0 : 0.0
-    score_long += not_ext_long   ? 10.0 : 0.0
-    score_long += adx_ok         ? 18.0 : 0.0
-    score_long += vol_ok         ? 10.0 : 0.0
-    score_long += cd_long_ok     ?  6.0 : 0.0
-    score_long += div_bonus_long
+// --- Counter-Trend Protection ---
+// Slowest stuck in extreme while fastest at opposite extreme
+ct_bull_danger = d4 < lowerBand and d4 <= d4[1] and d1 > upperBand
+ct_bear_danger = d4 > upperBand and d4 >= d4[1] and d1 < lowerBand
 
-    score_short  = 0.0
-    score_short += trend_down       ? 22.0 : 0.0
-    score_short += mom_down         ? 18.0 : 0.0
-    score_short += price_ok_short   ? 16.0 : 0.0
-    score_short += not_ext_short    ? 10.0 : 0.0
-    score_short += adx_ok           ? 18.0 : 0.0
-    score_short += vol_ok           ? 10.0 : 0.0
-    score_short += cd_short_ok      ?  6.0 : 0.0
-    score_short += div_bonus_short
+// --- Convergence Band ---
+convergence = (d1 * 1.0 + d2 * 2.0 + d3 * 3.0 + d4 * 4.0) / 10.0
+spread = (math.abs(d1 - convergence) + math.abs(d2 - convergence) + math.abs(d3 - convergence) + math.abs(d4 - convergence)) / 4.0
+conv_color = color.from_gradient(spread, 3.0, 20.0, color.new(color.white, 20), color.new(color.gray, 70))
 
-    raw   = math.max(score_long, score_short)
-    score = ta.ema(raw, math.max(1, smooth_len))
-    bias  = score_long > score_short ? 'Bullish' : score_short > score_long ? 'Bearish' : 'Neutral'
-
-    alpha = math.round(100.0 * (1.0 - math.min(score, 100.0) / 100.0))
-    color_hint = bias == 'Bullish' ? bullish_gradient(alpha) : bias == 'Bearish' ? bearish_gradient(alpha) : color.new(color.gray, 70)
-
-    [score, bias, score_long, score_short, color_hint]
-
-[rrc_score, rrc_bias, rrc_score_long, rrc_score_short, rrc_color_hint] = f_rrc_pro()
-rrc_score       := smma(rrc_score, 3)
-rrc_score_long  := smma(rrc_score_long, 3)
-rrc_score_short := smma(rrc_score_short, 3)
-
-// --- Derived Score ---
-avg       = (d1 + d2 + d3 + d4) / 4
-score_div = ((rrc_score_long - rrc_score_short) / 2) + 50
+// --- K/D Cross Signals in extreme zones ---
+bullCross = ta.crossover(k1, d1) and d1 < lowerBand
+bearCross = ta.crossunder(k1, d1) and d1 > upperBand
 
 // ==================================================================================
 // Background Color
@@ -251,7 +138,8 @@ brokerage1_trend_dir_fma = ta.ema(close, 21)
 brokerage1_trend_dir_sma = ta.ema(close, 50)
 brokerage1_trend_dir     = brokerage1_trend_dir_fma > brokerage1_trend_dir_sma ? "Up" : "Down"
 
-bgcolor(i_showDarkMode ? darkMode_clr : brokerage1_trend_dir == "Up" ? lightModeUp : lightModeDown)
+ct_warn = i_showCounterTrend and (ct_bull_danger or ct_bear_danger)
+bgcolor(ct_warn ? color.new(color.orange, 85) : i_showDarkMode ? darkMode_clr : brokerage1_trend_dir == "Up" ? lightModeUp : lightModeDown)
 
 // ==================================================================================
 // Grid Layout
@@ -259,18 +147,16 @@ bgcolor(i_showDarkMode ? darkMode_clr : brokerage1_trend_dir == "Up" ? lightMode
 onehundredLine = 100
 ninetyLine     = 90
 tenLine        = 10
-upperBand      = 80
 midBand        = 50
-lowerBand      = 20
 zeroLine       = 0
 
-onehundred = hline(onehundredLine, "100 Line",    color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
-ninety     = hline(ninetyLine,     "Ninety Line",  color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
-eighty     = hline(upperBand,      "Upper Band",   color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
-fifty      = hline(midBand,        "Mid Band",     color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
-twenty     = hline(lowerBand,      "Lower Band",   color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
-ten        = hline(tenLine,        "Ten Line",     color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
-zero       = hline(zeroLine,       "Zero Line",    color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
+onehundred = hline(onehundredLine, "100 Line",   color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
+ninety     = hline(ninetyLine,     "Ninety Line", color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
+eighty     = hline(upperBand,      "Upper Band",  color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
+fifty      = hline(midBand,        "Mid Band",    color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
+twenty     = hline(lowerBand,      "Lower Band",  color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
+ten        = hline(tenLine,        "Ten Line",    color=color.rgb(120, 123, 134, 50), linestyle=hline.style_dashed)
+zero       = hline(zeroLine,       "Zero Line",   color=color.rgb(120, 123, 134, 50), linestyle=hline.style_solid)
 
 // Zone fills — overbought (80-100) = RED, oversold (0-20) = GREEN
 fill(onehundred, eighty, color=color.new(color.red, 92))
@@ -287,34 +173,51 @@ plot(k1, title="Stoch K1", color=color.new(color.white, 40), linewidth=1)
 plot(d1, title="Stoch D1 Glow", linewidth=2, color=color.rgb(125, 249, 255, 0))
 plot(d1, title="Stoch D1",      linewidth=1, color=color.rgb(50, 50, 50, d1))
 
+// Convergence band
+plot(i_showConvergence ? convergence : na, title="Convergence", color=conv_color, linewidth=1, style=plot.style_line)
+
+// RSI divergence subtle histogram at midline
+rsi_div_clamped = math.max(-2.0, math.min(2.0, rsi_div / 15.0))
+rsi_div_plot    = 50.0 + rsi_div_clamped
+rsi_div_color   = rsi_div > 0 ? color.new(color.green, 60) : color.new(color.red, 60)
+plot(i_showRSIDivergence ? rsi_div_plot : na, title="RSI Div", style=plot.style_histogram, color=rsi_div_color, linewidth=2, histbase=50)
+
 // Quad alignment circles
-allOversold  = d1 < lowerBand and d2 < lowerBand and d3 < lowerBand and d4 < lowerBand
-allOverbought = d1 > upperBand and d2 > upperBand and d3 > upperBand and d4 > upperBand
 plot(allOversold ? zeroLine : na, style=plot.style_circles, color=color.green, linewidth=2, title="All Oversold")
 plot(allOverbought ? onehundredLine : na, style=plot.style_circles, color=color.red, linewidth=2, title="All Overbought")
 
 // K/D cross signals in extreme zones
-bullCross = ta.crossover(k1, d1) and d1 < lowerBand
-bearCross = ta.crossunder(k1, d1) and d1 > upperBand
 plotshape(i_showSignals and bullCross, style=shape.triangleup,   location=location.bottom, color=color.green, size=size.tiny, title="Bull K/D Cross")
 plotshape(i_showSignals and bearCross, style=shape.triangledown, location=location.top,    color=color.red,   size=size.tiny, title="Bear K/D Cross")
 
-// Rotation status — detect first bar of turn in extreme zones
-turningUp   = d1 < lowerBand and d1 > d1[1] and d1[1] <= d1[2]
-turningDown = d1 > upperBand and d1 < d1[1] and d1[1] >= d1[2]
-plotshape(i_showRotation and turningUp,   style=shape.labelup,   location=location.bottom, color=color.new(color.green, 30), text="TURN", textcolor=color.white, size=size.tiny, title="Turning Up")
-plotshape(i_showRotation and turningDown, style=shape.labeldown, location=location.top,    color=color.new(color.red, 30),   text="TURN", textcolor=color.white, size=size.tiny, title="Turning Down")
+// Rotation status — individual turn detection for featured stochastic
+plotshape(i_showRotation and turningUp1, style=shape.labelup,   location=location.bottom, color=color.new(color.green, 30), text="TURN", textcolor=color.white, size=size.tiny, title="Turning Up")
+plotshape(i_showRotation and turningDn1, style=shape.labeldown, location=location.top,    color=color.new(color.red, 30),   text="TURN", textcolor=color.white, size=size.tiny, title="Turning Down")
 
-// RRC histogram (toggled)
-score_div_clr = rrc_score_long > rrc_score_short ? color.rgb(127, 243, 131, 70) : color.rgb(250, 17, 17, 70)
-plot(i_showRRC ? score_div : na, linewidth=3, style=plot.style_histogram, color=score_div_clr, title="RRC Score", histbase=50)
+// Sequential rotation — fires when all 4 have turned in order (fast→slow)
+plotshape(i_showSequence and seq_bull_trigger, style=shape.diamond, location=location.bottom, color=color.new(color.green, 0), text="SEQ", textcolor=color.white, size=size.small, title="Sequential Bull Rotation")
+plotshape(i_showSequence and seq_bear_trigger, style=shape.diamond, location=location.top,    color=color.new(color.red, 0),   text="SEQ", textcolor=color.white, size=size.small, title="Sequential Bear Rotation")
+
+// Holy Grail — quad alignment + RSI divergence
+plotshape(i_showHolyGrail and holy_grail_bull, style=shape.flag, location=location.bottom, color=color.new(#FFD700, 0), text="HG", textcolor=color.white, size=size.small, title="Holy Grail Bull")
+plotshape(i_showHolyGrail and holy_grail_bear, style=shape.flag, location=location.top,    color=color.new(#FFD700, 0), text="HG", textcolor=color.white, size=size.small, title="Holy Grail Bear")
+
+// Counter-trend warning
+plotshape(i_showCounterTrend and ct_bull_danger, style=shape.xcross, location=location.top,    color=color.orange, size=size.tiny, title="Counter-Trend Bull Danger")
+plotshape(i_showCounterTrend and ct_bear_danger, style=shape.xcross, location=location.bottom, color=color.orange, size=size.tiny, title="Counter-Trend Bear Danger")
 
 // ==================================================================================
 // Alert Conditions
 // ==================================================================================
-alertcondition(allOversold,  "Quad Oversold",             "All 4 stochastics below 20 — rotation buy zone")
-alertcondition(allOverbought,"Quad Overbought",           "All 4 stochastics above 80 — rotation sell zone")
-alertcondition(bullCross,    "Bull K/D Cross (9/3)",      "K1 crossed above D1 in oversold zone")
-alertcondition(bearCross,    "Bear K/D Cross (9/3)",      "K1 crossed below D1 in overbought zone")
-alertcondition(turningUp,    "Rotation Turning Up (9/3)", "Fast stoch turning up from oversold")
-alertcondition(turningDown,  "Rotation Turning Down (9/3)","Fast stoch turning down from overbought")
+alertcondition(allOversold,       "Quad Oversold",                "All 4 stochastics below 20 — rotation buy zone")
+alertcondition(allOverbought,     "Quad Overbought",              "All 4 stochastics above 80 — rotation sell zone")
+alertcondition(bullCross,         "Bull K/D Cross (9/3)",         "K1 crossed above D1 in oversold zone")
+alertcondition(bearCross,         "Bear K/D Cross (9/3)",         "K1 crossed below D1 in overbought zone")
+alertcondition(turningUp1,        "Rotation Turning Up (9/3)",    "Fast stoch turning up from oversold")
+alertcondition(turningDn1,        "Rotation Turning Down (9/3)",  "Fast stoch turning down from overbought")
+alertcondition(seq_bull_trigger,  "Sequential Rotation Buy",      "All 4 stochastics turned up in sequence (fast to slow)")
+alertcondition(seq_bear_trigger,  "Sequential Rotation Sell",     "All 4 stochastics turned down in sequence (fast to slow)")
+alertcondition(holy_grail_bull,   "Holy Grail Buy",               "Quad oversold + RSI bullish divergence")
+alertcondition(holy_grail_bear,   "Holy Grail Sell",              "Quad overbought + RSI bearish divergence")
+alertcondition(ct_bull_danger,    "Counter-Trend Warning (Long)", "60/10 stuck below 20 while 9/3 above 80 — exit longs")
+alertcondition(ct_bear_danger,    "Counter-Trend Warning (Short)","60/10 stuck above 80 while 9/3 below 20 — exit shorts")
