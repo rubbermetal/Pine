@@ -51,11 +51,12 @@ zoneWidth = close * zonePct / 100
 f_nearExisting(levels, price, threshold) =>
     bool found = false
     int idx = -1
-    for i = 0 to array.size(levels) - 1
-        if math.abs(array.get(levels, i) - price) <= threshold
-            found := true
-            idx := i
-            break
+    if array.size(levels) > 0
+        for i = 0 to array.size(levels) - 1
+            if math.abs(array.get(levels, i) - price) <= threshold
+                found := true
+                idx := i
+                break
     [found, idx]
 
 // Add or merge a resistance level
@@ -123,27 +124,33 @@ f_capLevels(supLevels, supTouches, supBars, maxLevels)
 // ==================================================================================
 
 // Clear previous drawings
-for ln in resLines
-    line.delete(ln)
-array.clear(resLines)
-for bx in resBoxes
-    box.delete(bx)
-array.clear(resBoxes)
-for lb in resLabels
-    label.delete(lb)
-array.clear(resLabels)
-for ln in supLines
-    line.delete(ln)
-array.clear(supLines)
-for bx in supBoxes
-    box.delete(bx)
-array.clear(supBoxes)
-for lb in supLabels
-    label.delete(lb)
-array.clear(supLabels)
+if array.size(resLines) > 0
+    for ln in resLines
+        line.delete(ln)
+    array.clear(resLines)
+if array.size(resBoxes) > 0
+    for bx in resBoxes
+        box.delete(bx)
+    array.clear(resBoxes)
+if array.size(resLabels) > 0
+    for lb in resLabels
+        label.delete(lb)
+    array.clear(resLabels)
+if array.size(supLines) > 0
+    for ln in supLines
+        line.delete(ln)
+    array.clear(supLines)
+if array.size(supBoxes) > 0
+    for bx in supBoxes
+        box.delete(bx)
+    array.clear(supBoxes)
+if array.size(supLabels) > 0
+    for lb in supLabels
+        label.delete(lb)
+    array.clear(supLabels)
 
 // Draw resistance zones
-if i_showZones
+if i_showZones and array.size(resLevels) > 0
     for i = 0 to array.size(resLevels) - 1
         lvl     = array.get(resLevels, i)
         touches = array.get(resTouches, i)
@@ -159,7 +166,7 @@ if i_showZones
             array.push(resLabels, lb)
 
 // Draw support zones
-if i_showZones
+if i_showZones and array.size(supLevels) > 0
     for i = 0 to array.size(supLevels) - 1
         lvl     = array.get(supLevels, i)
         touches = array.get(supTouches, i)
