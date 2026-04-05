@@ -3,6 +3,7 @@
 
 //@version=6
 indicator("Dynamic Support Line", shorttitle="DSL", overlay=true)
+import TradingView/ta/8
 
 // ==================== Settings ====================
 var ma_group = "Moving Average Settings"
