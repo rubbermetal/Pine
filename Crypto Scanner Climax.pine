@@ -1,0 +1,401 @@
+// © claygrace74 (Refined to Peak Performance by Gemini, enhanced with Quad Rotation by Claude)
+//@version=5
+indicator('Crypto Scanner [Climax]', overlay=false, shorttitle="CS_Climax", max_bars_back=5000)
+
+// ==========================================
+// 1. INPUTS & CONFIGURATION
+// ==========================================
+grp_vis     = "Visual Settings"
+showDash    = input.bool(true, "Show Dashboard", group=grp_vis)
+dashLoc     = input.string("Top Right", "Location", options=["Top Right", "Bottom Right", "Top Left", "Bottom Left"], group=grp_vis)
+textSize    = input.string("Small", "Size", options=["Tiny", "Small", "Normal"], group=grp_vis)
+darkMode    = input.bool(true, "Dark Mode", group=grp_vis)
+
+// Volume Candle Color Inputs
+grp_volC    = "Volume Candle Colors"
+c_bullMax   = input.color(#00FF00, "Bull: >= 2.0x Vol", group=grp_volC)
+c_bullMid   = input.color(#00BFFF, "Bull: >= 1.5x Vol", group=grp_volC)
+c_bullAvg   = input.color(#008000, "Bull: >= 1.0x Vol", group=grp_volC)
+c_bullMin   = input.color(#006400, "Bull: < 1.0x Vol", group=grp_volC)
+c_bearMax   = input.color(#FFFF00, "Bear: >= 2.0x Vol", group=grp_volC)
+c_bearMid   = input.color(#FFA500, "Bear: >= 1.5x Vol", group=grp_volC)
+c_bearAvg   = input.color(#FF0000, "Bear: >= 1.0x Vol", group=grp_volC)
+c_bearMin   = input.color(#8B0000, "Bear: < 1.0x Vol", group=grp_volC)
+
+grp_dash    = "Dashboard Columns"
+showPrices  = input.bool(true, "Show Prices (Avg/H/L)", group=grp_dash)
+showVolMet  = input.bool(true, "Show Volume/Delta/VWAP", group=grp_dash)
+showOsc     = input.bool(true, "Show Oscillators (RSI/Stoch/CCI/MFI)", group=grp_dash)
+showQR      = input.bool(true, "Show Quad Rotation Status", group=grp_dash)
+showTrend   = input.bool(true, "Show Trend (ADX/ROC/MACD/EMA/Tar)", group=grp_dash)
+showVolat   = input.bool(true, "Show Volatility (ATR/STDEV/Z-Scr)", group=grp_dash)
+
+grp_feat    = "Overlay Toggles"
+i_showVolC  = input.bool(true, "Show Volume Candles", group=grp_feat)
+i_showBB    = input.bool(false, "Show Bollinger Bands", group=grp_feat)
+i_showKC    = input.bool(false, "Show Keltner Channels", group=grp_feat)
+i_showIchi  = input.bool(false, "Show Ichimoku", group=grp_feat)
+i_showGator = input.bool(false, "Show Gator", group=grp_feat)
+i_showTar   = input.bool(false, "Show Tar Baby", group=grp_feat)
+i_showALMA  = input.bool(false, "Show ALMA", group=grp_feat)
+i_showEMA   = input.bool(false, "Show EMA Ribbon", group=grp_feat)
+i_showTarBand = input.bool(false, "Show Tar Baby Bands", group=grp_feat)
+
+grp_tarB    = "Tar Baby Band Settings"
+tarB_mult   = input.float(2.0, "Band Multiplier", minval=0.1, step=0.1, group=grp_tarB)
+tarB_mode   = input.string("ATR", "Band Width Mode", options=["ATR", "StdDev"], group=grp_tarB)
+tarB_atrLen = input.int(14, "ATR Length (if ATR mode)", minval=1, group=grp_tarB)
+tarB_stdLen = input.int(120, "StdDev Length (if StdDev mode)", minval=1, group=grp_tarB)
+
+grp_tf      = "Multi-Timeframe Settings"
+tf2         = input.timeframe("5", "Brokerage 2", group=grp_tf)
+tf3         = input.timeframe("60", "Brokerage 3", group=grp_tf)
+tf4         = input.timeframe("D", "Brokerage 4", group=grp_tf)
+
+grp_param   = "Indicator Parameters"
+len_rsi     = input.int(14, "RSI Length", group=grp_param)
+len_adx     = input.int(14, "ADX Length", group=grp_param)
+len_vol     = input.int(20, "Volume Lookback", group=grp_param)
+
+grp_sig     = "Master Confluence Settings"
+useRsiSig   = input.bool(true, "Require RSI Trend (Bull>50, Bear<50)", group=grp_sig)
+useMacSig   = input.bool(true, "Require MACD Trend (Bull>0, Bear<0)", group=grp_sig)
+useTarSig   = input.bool(true, "Require TarBaby Trend", group=grp_sig)
+useEmaSig   = input.bool(true, "Require EMA 20/50 Cross Logic", group=grp_sig)
+
+// ==========================================
+// 2. CUSTOM FUNCTIONS (The Engine)
+// ==========================================
+
+f_safe_tf(_tf) =>
+    req = timeframe.in_seconds(_tf)
+    cur = timeframe.in_seconds(timeframe.period)
+    (na(req) or na(cur)) ? _tf : (req < cur ? timeframe.period : _tf)
+
+f_kc(_src, _len, _mult, _useTR) =>
+    _basis = ta.ema(_src, _len)
+    _range = _useTR ? ta.tr : (high - low)
+    _emaRange = ta.ema(_range, _len)
+    [_basis, _basis + _emaRange * _mult, _basis - _emaRange * _mult]
+
+f_tarBaby(_src, _len) => ta.rma(_src, _len)
+
+f_gator() =>
+    jaw   = ta.sma(hl2, 13)
+    teeth = ta.sma(hl2, 8)
+    lips  = ta.sma(hl2, 5)
+    [jaw, teeth, lips]
+
+f_ichi() =>
+    tenkan = math.avg(ta.lowest(low, 9), ta.highest(high, 9))
+    kijun  = math.avg(ta.lowest(low, 26), ta.highest(high, 26))
+    spanA  = math.avg(tenkan, kijun)
+    spanB  = math.avg(ta.lowest(low, 52), ta.highest(high, 52))
+    [tenkan, kijun, spanA, spanB]
+
+f_calc_all(_rLen, _aLen, _vLen) =>
+    _o = open, _h = high, _l = low, _c = close, _v = volume
+    _hl2 = hl2, _hlc3 = hlc3, _ohlc4 = ohlc4
+
+    _ema20  = ta.ema(_c, 20)
+    _ema50  = ta.ema(_c, 50)
+    _ema200 = ta.ema(_c, 200)
+
+    _rsi    = ta.rsi(_c, _rLen)
+    _cci    = ta.cci(_c, 20)
+    _mfi    = ta.mfi(_c, 14)
+    _roc    = ta.sma(ta.roc(_c, 9), 5)
+    _mom    = _c - _c[10]
+
+    [dp, dm, _adx] = ta.dmi(_aLen, _aLen)
+    [_mac, _sig, _hist] = ta.macd(_c, 12, 26, 9)
+
+    // Standard stochastic (14,3,3) for dashboard
+    _k = ta.sma(ta.stoch(_c, _h, _l, 14), 3)
+    _d = ta.sma(_k, 3)
+
+    // Quad Rotation stochastics: 9/3, 40/4, 60/10 (14/3 already computed above)
+    _k9  = ta.sma(ta.stoch(_c, _h, _l, 9), 3)
+    _d9  = ta.sma(_k9, 3)
+    _k40 = ta.sma(ta.stoch(_c, _h, _l, 40), 4)
+    _d40 = ta.sma(_k40, 4)
+    _k60 = ta.sma(ta.stoch(_c, _h, _l, 60), 10)
+    _d60 = ta.sma(_k60, 10)
+
+    _atr = ta.atr(14)
+    _std = ta.stdev(_c, 20)
+
+    _vAvg = ta.sma(_v, _vLen)
+    _delta = _c >= _o ? _v : -_v
+
+    _vwap = ta.sma(_c * _v, _vLen) / ta.sma(_v, _vLen)
+    _tar = ta.rma(_ohlc4, 120)
+    _z = (_c - ta.sma(_c, 100)) / ta.stdev(_c, 100)
+
+    [_c, _h, _l, _v, _vAvg, _delta, _rsi, _k, _d, _cci, _mfi, _adx, _roc, _atr, _std, _mom, _z, _mac, _hist, _tar, _ema20, _ema50, _ema200, _vwap, _d9, _d40, _d60]
+
+// ==========================================
+// 3. DATA FETCHING
+// ==========================================
+
+safe_tf2 = f_safe_tf(tf2)
+safe_tf3 = f_safe_tf(tf3)
+safe_tf4 = f_safe_tf(tf4)
+
+[c1, h1, l1, v1, va1, d1, rsi1, k1, d_1, cci1, mfi1, adx1, roc1, atr1, std1, mom1, z1, mac1, his1, tar1, e20_1, e50_1, e200_1, vw1, qd9_1, qd40_1, qd60_1] = request.security(syminfo.tickerid, timeframe.period, f_calc_all(len_rsi, len_adx, len_vol), lookahead=barmerge.lookahead_off)
+[c2, h2, l2, v2, va2, d2, rsi2, k2, d_2, cci2, mfi2, adx2, roc2, atr2, std2, mom2, z2, mac2, his2, tar2, e20_2, e50_2, e200_2, vw2, qd9_2, qd40_2, qd60_2] = request.security(syminfo.tickerid, safe_tf2, f_calc_all(len_rsi, len_adx, len_vol), lookahead=barmerge.lookahead_off)
+[c3, h3, l3, v3, va3, d3, rsi3, k3, d_3, cci3, mfi3, adx3, roc3, atr3, std3, mom3, z3, mac3, his3, tar3, e20_3, e50_3, e200_3, vw3, qd9_3, qd40_3, qd60_3] = request.security(syminfo.tickerid, safe_tf3, f_calc_all(len_rsi, len_adx, len_vol), lookahead=barmerge.lookahead_off)
+[c4, h4, l4, v4, va4, d4, rsi4, k4, d_4, cci4, mfi4, adx4, roc4, atr4, std4, mom4, z4, mac4, his4, tar4, e20_4, e50_4, e200_4, vw4, qd9_4, qd40_4, qd60_4] = request.security(syminfo.tickerid, safe_tf4, f_calc_all(len_rsi, len_adx, len_vol), lookahead=barmerge.lookahead_off)
+
+// ==========================================
+// 4. VISUAL OVERLAYS
+// ==========================================
+
+volSma = ta.sma(volume, len_vol)
+isBull = close >= open
+volMult = volSma > 0 ? (volume / volSma) : 0
+
+bullColor = volMult >= 2.0 ? c_bullMax : volMult >= 1.5 ? c_bullMid : volMult >= 1.0 ? c_bullAvg : c_bullMin
+bearColor = volMult >= 2.0 ? c_bearMax : volMult >= 1.5 ? c_bearMid : volMult >= 1.0 ? c_bearAvg : c_bearMin
+volColor = isBull ? bullColor : bearColor
+
+plotcandle(i_showVolC ? open : na, i_showVolC ? high : na, i_showVolC ? low : na, i_showVolC ? close : na, title="Volume Candles", color=volColor, wickcolor=volColor, bordercolor=volColor, force_overlay=true)
+
+plot(i_showTar ? tar1 : na, "Tar Baby", color=color.new(color.red, 40), linewidth=2, force_overlay=true)
+
+// --- Tar Baby Bands ---
+tarB_basis = ta.rma(ohlc4, 120)
+tarB_atr   = ta.atr(tarB_atrLen)
+tarB_std   = ta.stdev(close, tarB_stdLen)
+tarB_spread = tarB_mode == "ATR" ? tarB_atr * tarB_mult : tarB_std * tarB_mult
+tarB_upper = tarB_basis + tarB_spread
+tarB_lower = tarB_basis - tarB_spread
+
+p_tarB_upper = plot(i_showTarBand ? tarB_upper : na, "Tar Band Upper", color=color.new(#FF6D00, 30), linewidth=2, force_overlay=true)
+p_tarB_mid   = plot(i_showTarBand ? tarB_basis : na, "Tar Band Mid",   color=color.new(color.red, 40), linewidth=2, force_overlay=true, style=plot.style_circles)
+p_tarB_lower = plot(i_showTarBand ? tarB_lower : na, "Tar Band Lower", color=color.new(#FF6D00, 30), linewidth=2, force_overlay=true)
+fill(p_tarB_upper, p_tarB_lower, color=close > tarB_basis ? color.new(#00E676, 92) : color.new(#FF5252, 92), title="Tar Band Fill")
+
+[g_jaw, g_teeth, g_lips] = f_gator()
+plot(i_showGator ? g_jaw : na, "Gator Jaw", color=color.blue, offset=8, force_overlay=true)
+plot(i_showGator ? g_teeth : na, "Gator Teeth", color=color.red, offset=5, force_overlay=true)
+plot(i_showGator ? g_lips : na, "Gator Lips", color=color.green, offset=3, force_overlay=true)
+
+[i_ten, i_kij, i_sa, i_sb] = f_ichi()
+p_sa = plot(i_showIchi ? i_sa : na, "Span A", color=color.green, offset=26, force_overlay=true)
+p_sb = plot(i_showIchi ? i_sb : na, "Span B", color=color.red, offset=26, force_overlay=true)
+fill(p_sa, p_sb, color=i_sa > i_sb ? color.new(color.green, 90) : color.new(color.red, 90))
+
+plot(i_showEMA ? e20_1 : na, "EMA 20", color=color.yellow, force_overlay=true)
+plot(i_showEMA ? e50_1 : na, "EMA 50", color=color.orange, force_overlay=true)
+plot(i_showEMA ? e200_1 : na, "EMA 200", color=color.blue, linewidth=2, force_overlay=true)
+
+almaF = ta.alma(close, 50, 0.85, 6)
+almaS = ta.alma(close, 200, 0.85, 6)
+plot(i_showALMA ? almaF : na, "ALMA Fast", color=color.green, force_overlay=true)
+plot(i_showALMA ? almaS : na, "ALMA Slow", color=color.red, force_overlay=true)
+
+[mk, uk, lk] = f_kc(close, 20, 1.5, true)
+plot(i_showKC ? uk : na, "KC Upper", color=color.blue, force_overlay=true)
+plot(i_showKC ? lk : na, "KC Lower", color=color.blue, force_overlay=true)
+
+bb_basis = ta.sma(close, 20)
+bb_dev = 2.0 * ta.stdev(close, 20)
+plot(i_showBB ? bb_basis + bb_dev : na, "BB Upper", color=color.purple, force_overlay=true)
+plot(i_showBB ? bb_basis - bb_dev : na, "BB Lower", color=color.purple, force_overlay=true)
+
+// Set main chart background color
+lightModeDown = color.new(color.rgb(241, 24, 24), 90)
+lightModeUp = color.new(#02a710, 90)
+brokerage1_trend_dir_fma = ta.ema(close, 21)
+brokerage1_trend_dir_sma = ta.ema(close, 50)
+brokerage1_trend_dir = brokerage1_trend_dir_fma > brokerage1_trend_dir_sma ? "Up" : "Down"
+
+bgcolor(brokerage1_trend_dir == "Up" ? lightModeUp : lightModeDown, force_overlay = true)
+
+// ==========================================
+// 5. DASHBOARD LOGIC (Dynamic UI)
+// ==========================================
+
+c_bg = darkMode ? color.new(#131722, 20) : color.new(#ffffff, 20)
+c_tx = darkMode ? #ffffff : #000000
+c_up = #00E676
+c_dn = #FF5252
+c_nu = #9598A1
+t_size = textSize == "Tiny" ? size.tiny : textSize == "Normal" ? size.normal : size.small
+
+var pos = position.top_right
+if dashLoc == "Top Left"
+    pos := position.top_left
+else if dashLoc == "Bottom Right"
+    pos := position.bottom_right
+else if dashLoc == "Bottom Left"
+    pos := position.bottom_left
+
+var tbl = table.new(pos, 35, 6, bgcolor=c_bg, frame_color=c_nu, frame_width=1, border_width=1, border_color=color.new(c_nu, 50))
+
+f_cell(_t, _r, _c, _txt, _bg, _tc) =>
+    table.cell(_t, _c, _r, _txt, bgcolor=_bg, text_color=_tc, text_size=t_size)
+    _c + 1
+
+// Quad Rotation status helper: count how many D-lines are in oversold/overbought
+f_qr_status(_d9, _d14, _d40, _d60) =>
+    int os_count = 0
+    int ob_count = 0
+    os_count += _d9  < 20 ? 1 : 0
+    os_count += _d14 < 20 ? 1 : 0
+    os_count += _d40 < 20 ? 1 : 0
+    os_count += _d60 < 20 ? 1 : 0
+    ob_count += _d9  > 80 ? 1 : 0
+    ob_count += _d14 > 80 ? 1 : 0
+    ob_count += _d40 > 80 ? 1 : 0
+    ob_count += _d60 > 80 ? 1 : 0
+    string txt = ""
+    color  bg  = color(na)
+    if os_count == 4
+        txt := "BUY 4/4"
+        bg  := color.new(c_up, 20)
+    else if os_count >= 3
+        txt := "OS " + str.tostring(os_count) + "/4"
+        bg  := color.new(c_up, 50)
+    else if ob_count == 4
+        txt := "SELL 4/4"
+        bg  := color.new(c_dn, 20)
+    else if ob_count >= 3
+        txt := "OB " + str.tostring(ob_count) + "/4"
+        bg  := color.new(c_dn, 50)
+    else
+        txt := str.tostring(os_count) + "v" + str.tostring(ob_count)
+        bg  := color(na)
+    [txt, bg]
+
+f_render_row(_t, _r, _tfText, _price, _h, _l, _v, _va, _del, _vw, _rsi, _k, _d, _cci, _mfi, _adx, _roc, _atr, _std, _mom, _z, _mac, _his, _tar, _e20, _e50, _e200, _d9, _d40, _d60) =>
+    int dc = 0
+    dc := f_cell(_t, _r, dc, _tfText, c_bg, c_tx)
+
+    if showPrices
+        dc := f_cell(_t, _r, dc, str.tostring((_h+_l)/2, format.mintick), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_h, format.mintick), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_l, format.mintick), color(na), c_tx)
+
+    if showVolMet
+        dc := f_cell(_t, _r, dc, str.tostring(_v, format.volume), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_va, format.volume), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_del, format.volume), color(na), _del>0?c_up:c_dn)
+        dc := f_cell(_t, _r, dc, str.tostring(_vw, format.mintick), color(na), c_tx)
+
+    if showOsc
+        dc := f_cell(_t, _r, dc, str.tostring(_rsi, "#.0"), color.from_gradient(_rsi, 30, 70, c_dn, c_up), color.white)
+        dc := f_cell(_t, _r, dc, str.tostring(_k, "#.0"), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_d, "#.0"), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_cci, "#.0"), color.from_gradient(_cci, -100, 100, c_dn, c_up), color.white)
+        dc := f_cell(_t, _r, dc, str.tostring(_mfi, "#.0"), color.from_gradient(_mfi, 20, 80, c_dn, c_up), color.white)
+
+    if showQR
+        [qr_txt, qr_bg] = f_qr_status(_d9, _d, _d40, _d60)
+        dc := f_cell(_t, _r, dc, qr_txt, qr_bg, qr_bg == color(na) ? c_tx : color.white)
+
+    if showTrend
+        dc := f_cell(_t, _r, dc, str.tostring(_adx, "#.0"), _adx>25?color.new(c_up,60):color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_roc, "#.00"), color(na), _roc>0?c_up:c_dn)
+        dc := f_cell(_t, _r, dc, str.tostring(_mom, "#.00"), color(na), _mom>0?c_up:c_dn)
+        dc := f_cell(_t, _r, dc, str.tostring(_mac, "#.00"), color(na), _mac>0?c_up:c_dn)
+        dc := f_cell(_t, _r, dc, str.tostring(_his, "#.00"), _his>0?color.new(c_up, 70):color.new(c_dn, 70), c_tx)
+        dc := f_cell(_t, _r, dc, _price > _tar ? "ABOVE" : "BELOW", _price>_tar?color.new(c_up, 60):color.new(c_dn, 60), color.white)
+        dc := f_cell(_t, _r, dc, _e20 > _e50 ? "BULL" : "BEAR", _e20>_e50?c_up:c_dn, color.white)
+        dc := f_cell(_t, _r, dc, _e50 > _e200 ? "GOLD" : "DEATH", _e50>_e200 ? color.new(#FFD700, 0) : color.new(#000000, 0), color.white)
+
+    if showVolat
+        dc := f_cell(_t, _r, dc, str.tostring(_atr, format.mintick), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_std, format.mintick), color(na), c_tx)
+        dc := f_cell(_t, _r, dc, str.tostring(_z, "#.00"), color.from_gradient(_z, -2.0, 2.0, c_dn, c_up), color.white)
+
+// ==========================================
+// 6. GLOBAL SIGNALS & ALERTS
+// ==========================================
+
+bool bull1 = true, bool bear1 = true
+bool bull2 = true, bool bear2 = true
+bool bull3 = true, bool bear3 = true
+bool bull4 = true, bool bear4 = true
+
+if useRsiSig
+    bull1 := bull1 and rsi1 > 50, bear1 := bear1 and rsi1 < 50
+    bull2 := bull2 and rsi2 > 50, bear2 := bear2 and rsi2 < 50
+    bull3 := bull3 and rsi3 > 50, bear3 := bear3 and rsi3 < 50
+    bull4 := bull4 and rsi4 > 50, bear4 := bear4 and rsi4 < 50
+if useMacSig
+    bull1 := bull1 and mac1 > 0, bear1 := bear1 and mac1 < 0
+    bull2 := bull2 and mac2 > 0, bear2 := bear2 and mac2 < 0
+    bull3 := bull3 and mac3 > 0, bear3 := bear3 and mac3 < 0
+    bull4 := bull4 and mac4 > 0, bear4 := bear4 and mac4 < 0
+if useTarSig
+    bull1 := bull1 and c1 > tar1, bear1 := bear1 and c1 < tar1
+    bull2 := bull2 and c2 > tar2, bear2 := bear2 and c2 < tar2
+    bull3 := bull3 and c3 > tar3, bear3 := bear3 and c3 < tar3
+    bull4 := bull4 and c4 > tar4, bear4 := bear4 and c4 < tar4
+if useEmaSig
+    bull1 := bull1 and e20_1 > e50_1, bear1 := bear1 and e20_1 < e50_1
+    bull2 := bull2 and e20_2 > e50_2, bear2 := bear2 and e20_2 < e50_2
+    bull3 := bull3 and e20_3 > e50_3, bear3 := bear3 and e20_3 < e50_3
+    bull4 := bull4 and e20_4 > e50_4, bear4 := bear4 and e20_4 < e50_4
+
+int total_bull = (bull1?1:0) + (bull2?1:0) + (bull3?1:0) + (bull4?1:0)
+int total_bear = (bear1?1:0) + (bear2?1:0) + (bear3?1:0) + (bear4?1:0)
+
+// Quad Rotation alerts (current timeframe)
+bool qr_all_oversold  = qd9_1 < 20 and d_1 < 20 and qd40_1 < 20 and qd60_1 < 20
+bool qr_all_overbought = qd9_1 > 80 and d_1 > 80 and qd40_1 > 80 and qd60_1 > 80
+
+alertcondition(total_bull == 4, "Strong Buy", "All Timeframes Bullish")
+alertcondition(total_bear == 4, "Strong Sell", "All Timeframes Bearish")
+alertcondition(qr_all_oversold,  "Quad Rotation Oversold",  "All 4 stochastics below 20 on current TF")
+alertcondition(qr_all_overbought,"Quad Rotation Overbought","All 4 stochastics above 80 on current TF")
+
+// ------------------------------
+
+if showDash and barstate.islast
+    int hc = 0
+    hc := f_cell(tbl, 0, hc, "TF", color.new(#000000, 0), color.white)
+    if showPrices
+        hc := f_cell(tbl, 0, hc, "Avg", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "High", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "Low", color.new(#000000, 0), color.white)
+    if showVolMet
+        hc := f_cell(tbl, 0, hc, "Vol", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "AvgVol", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "Delta", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "RVWAP", color.new(#000000, 0), color.white)
+    if showOsc
+        hc := f_cell(tbl, 0, hc, "RSI", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "StochK", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "StochD", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "CCI", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "MFI", color.new(#000000, 0), color.white)
+    if showQR
+        hc := f_cell(tbl, 0, hc, "QR", color.new(#000000, 0), color.white)
+    if showTrend
+        hc := f_cell(tbl, 0, hc, "ADX", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "ROC", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "MOM", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "MACD", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "Hist", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "TarBaby", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "E20/50", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "E50/200", color.new(#000000, 0), color.white)
+    if showVolat
+        hc := f_cell(tbl, 0, hc, "ATR", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "STDEV", color.new(#000000, 0), color.white)
+        hc := f_cell(tbl, 0, hc, "Z-Scr", color.new(#000000, 0), color.white)
+
+    int totalCols = hc
+
+    f_render_row(tbl, 1, timeframe.period, c1, h1, l1, v1, va1, d1, vw1, rsi1, k1, d_1, cci1, mfi1, adx1, roc1, atr1, std1, mom1, z1, mac1, his1, tar1, e20_1, e50_1, e200_1, qd9_1, qd40_1, qd60_1)
+    f_render_row(tbl, 2, safe_tf2, c2, h2, l2, v2, va2, d2, vw2, rsi2, k2, d_2, cci2, mfi2, adx2, roc2, atr2, std2, mom2, z2, mac2, his2, tar2, e20_2, e50_2, e200_2, qd9_2, qd40_2, qd60_2)
+    f_render_row(tbl, 3, safe_tf3, c3, h3, l3, v3, va3, d3, vw3, rsi3, k3, d_3, cci3, mfi3, adx3, roc3, atr3, std3, mom3, z3, mac3, his3, tar3, e20_3, e50_3, e200_3, qd9_3, qd40_3, qd60_3)
+    f_render_row(tbl, 4, safe_tf4, c4, h4, l4, v4, va4, d4, vw4, rsi4, k4, d_4, cci4, mfi4, adx4, roc4, atr4, std4, mom4, z4, mac4, his4, tar4, e20_4, e50_4, e200_4, qd9_4, qd40_4, qd60_4)
+
+    table.merge_cells(tbl, 0, 5, totalCols > 0 ? totalCols - 1 : 0, 5)
+    txt_sig = total_bull == 4 ? "STRONG BUY" : total_bear == 4 ? "STRONG SELL" : "NEUTRAL"
+    col_sig = total_bull == 4 ? c_up : total_bear == 4 ? c_dn : c_nu
+    table.cell(tbl, 0, 5, "MASTER CONFLUENCE: " + txt_sig + " (Bull: " + str.tostring(total_bull) + "/4 | Bear: " + str.tostring(total_bear) + "/4)", bgcolor=col_sig, text_color=color.white, text_size=t_size)
