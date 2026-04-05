@@ -2,7 +2,7 @@
 // © claygrace74
 
 //@version=6
-indicator(title="Bears and Bulls", shorttitle="B&B", overlay=true)
+indicator(title="Bears and Bulls", shorttitle="B&B", overlay=true, max_labels_count=500)
 
 // ==================== RSI Filter Settings ====================
 var rsi_group = "RSI Filter Settings"
@@ -27,6 +27,7 @@ volLookback = input.int(20,     "Volume Average Lookback", minval=5, group=vol_g
 
 // ==================== Display Settings ====================
 var disp_group = "Display Settings"
+i_showLabels = input.bool(true, "Show Pattern Name Labels", group=disp_group)
 bullHighClr = input.color(#04F909, "Bull High Reliability", group=disp_group)
 bullMedClr  = input.color(color.new(#04F909, 30), "Bull Medium Reliability", group=disp_group)
 bullLowClr  = input.color(color.new(#04F909, 60), "Bull Low Reliability", group=disp_group)
@@ -39,7 +40,6 @@ bearLowClr  = input.color(color.new(#F90404, 60), "Bear Low Reliability", group=
 // ==================================================================================
 body         = close - open
 candleRange  = high - low
-middle       = (open + close) / 2
 abody        = math.abs(body)
 ratio        = candleRange > 0 ? abody / candleRange : 0
 longcandle   = ratio > 0.6
@@ -133,83 +133,157 @@ bullish_breakaway   = body[4] < 0 and body[3] < 0 and body > 0 and open[3] < clo
 concealing_baby_swallow = body[3] < 0 and body[2] < 0 and body[1] < 0 and body < 0 and ratio[3] > 0.8 and ratio[2] > 0.8 and ratio > 0.8 and open[1] < close[2] and high[1] > close[2] and shadowtop[1] > 0.6 * (abody[1] + shadowbottom[1]) and bodybottom < bodybottom[1] and bodytop > high[1]
 
 // ==================================================================================
-// Aggregate Signals
+// Aggregate Signals by Reliability Tier
 // ==================================================================================
 
-// Bull aggregates by reliability
-highRelBull = (bullRSI and volOk) and (three_white_soldiers or morning_star or morning_star_doji or bullish_engulfing or three_outside_up or abandoned_baby_bottom)
-medRelBull  = (bullRSI and volOk) and (piercing_line or bullish_harami or bullish_harami_cross or rising_three_methods or bullish_mat_hold or bullish_three_line_strike or three_inside_up or bullish_breakaway or homing_pigeon or last_engulfing_bottom or three_stars_in_south or bullish_engulfing_doji)
-lowRelBull  = (bullRSI and volOk) and (hammer or inverted_hammer or dragonfly_doji_bottom or concealing_baby_swallow)
+// Bull aggregates
+highRelBull = (bullRSI and volOk) and (i_showTriple and (three_white_soldiers or morning_star or morning_star_doji or three_outside_up or abandoned_baby_bottom) or i_showDouble and bullish_engulfing)
+medRelBull  = (bullRSI and volOk) and (i_showDouble and (piercing_line or bullish_harami or bullish_harami_cross or bullish_engulfing_doji or last_engulfing_bottom or homing_pigeon) or i_showTriple and (three_inside_up or three_stars_in_south) or i_showMulti and (rising_three_methods or bullish_mat_hold or bullish_three_line_strike or bullish_breakaway))
+lowRelBull  = (bullRSI and volOk) and i_showSingle and (hammer or inverted_hammer or dragonfly_doji_bottom) or (bullRSI and volOk) and i_showMulti and concealing_baby_swallow
 
-// Bear aggregates by reliability
-highRelBear = (bearRSI and volOk) and (three_black_crows or evening_star or evening_star_doji or bearish_engulfing or three_outside_down or abandoned_baby_top)
-medRelBear  = (bearRSI and volOk) and (dark_cloud_cover or bearish_harami or bearish_harami_cross or falling_three_methods or bearish_three_line_strike or three_inside_down or bearish_breakaway or last_engulfing_top or descending_hawk or two_crows or upside_gap_two_crows or advance_block or bearish_engulfing_doji)
-lowRelBear  = (bearRSI and volOk) and (shooting_star or shooting_star_doji or the_hanging_man or gravestone_doji_top or dragonfly_doji_top)
+// Bear aggregates
+highRelBear = (bearRSI and volOk) and (i_showTriple and (three_black_crows or evening_star or evening_star_doji or three_outside_down or abandoned_baby_top) or i_showDouble and bearish_engulfing)
+medRelBear  = (bearRSI and volOk) and (i_showDouble and (dark_cloud_cover or bearish_harami or bearish_harami_cross or bearish_engulfing_doji or last_engulfing_top or descending_hawk or two_crows) or i_showTriple and (three_inside_down or upside_gap_two_crows or advance_block) or i_showMulti and (falling_three_methods or bearish_three_line_strike or bearish_breakaway))
+lowRelBear  = (bearRSI and volOk) and i_showSingle and (shooting_star or shooting_star_doji or the_hanging_man or gravestone_doji_top or dragonfly_doji_top)
 
 anyBull = highRelBull or medRelBull or lowRelBull
 anyBear = highRelBear or medRelBear or lowRelBear
 
 // ==================================================================================
-// Plot Signals — Individual plotshape with pattern text and reliability color/size
+// Build Pattern Name Strings (series — for label.new)
 // ==================================================================================
 
-// --- BULLISH: High Reliability (Triple+) ---
-plotshape(i_showTriple and bullRSI and volOk and three_white_soldiers,  style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="3WS",   textcolor=bullHighClr, size=size.small, title="Three White Soldiers")
-plotshape(i_showTriple and bullRSI and volOk and morning_star,         style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="MStar",  textcolor=bullHighClr, size=size.small, title="Morning Star")
-plotshape(i_showTriple and bullRSI and volOk and morning_star_doji,    style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="MSDoji", textcolor=bullHighClr, size=size.small, title="Morning Star Doji")
-plotshape(i_showDouble and bullRSI and volOk and bullish_engulfing,    style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="Eng",    textcolor=bullHighClr, size=size.small, title="Bullish Engulfing")
-plotshape(i_showTriple and bullRSI and volOk and three_outside_up,     style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="3OU",    textcolor=bullHighClr, size=size.small, title="Three Outside Up")
-plotshape(i_showTriple and bullRSI and volOk and abandoned_baby_bottom,style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="ABaby",  textcolor=bullHighClr, size=size.small, title="Abandoned Baby Bottom")
+f_bullName() =>
+    string n = ""
+    // High reliability
+    if three_white_soldiers
+        n := "3 White Soldiers"
+    else if morning_star
+        n := "Morning Star"
+    else if morning_star_doji
+        n := "Morning Star Doji"
+    else if bullish_engulfing
+        n := "Bullish Engulfing"
+    else if three_outside_up
+        n := "3 Outside Up"
+    else if abandoned_baby_bottom
+        n := "Abandoned Baby"
+    // Medium reliability
+    else if piercing_line
+        n := "Piercing Line"
+    else if bullish_harami
+        n := "Bullish Harami"
+    else if bullish_harami_cross
+        n := "Harami Cross"
+    else if bullish_engulfing_doji
+        n := "Engulfing Doji"
+    else if rising_three_methods
+        n := "Rising 3 Methods"
+    else if bullish_mat_hold
+        n := "Mat Hold"
+    else if bullish_three_line_strike
+        n := "3 Line Strike"
+    else if three_inside_up
+        n := "3 Inside Up"
+    else if bullish_breakaway
+        n := "Breakaway"
+    else if three_stars_in_south
+        n := "3 Stars South"
+    else if last_engulfing_bottom
+        n := "Last Engulf"
+    else if homing_pigeon
+        n := "Homing Pigeon"
+    // Low reliability
+    else if hammer
+        n := "Hammer"
+    else if inverted_hammer
+        n := "Inv Hammer"
+    else if dragonfly_doji_bottom
+        n := "Dragonfly Doji"
+    else if concealing_baby_swallow
+        n := "Baby Swallow"
+    n
 
-// --- BULLISH: Medium Reliability ---
-plotshape(i_showDouble and bullRSI and volOk and piercing_line,        style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Pierce", textcolor=bullMedClr, size=size.tiny, title="Piercing Line")
-plotshape(i_showDouble and bullRSI and volOk and bullish_harami,       style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Harami", textcolor=bullMedClr, size=size.tiny, title="Bullish Harami")
-plotshape(i_showDouble and bullRSI and volOk and bullish_harami_cross, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="HCross", textcolor=bullMedClr, size=size.tiny, title="Bullish Harami Cross")
-plotshape(i_showDouble and bullRSI and volOk and bullish_engulfing_doji,style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="EDoji", textcolor=bullMedClr, size=size.tiny, title="Bullish Engulfing Doji")
-plotshape(i_showMulti  and bullRSI and volOk and rising_three_methods, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="R3M",   textcolor=bullMedClr, size=size.tiny, title="Rising Three Methods")
-plotshape(i_showMulti  and bullRSI and volOk and bullish_mat_hold,     style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="MatH",  textcolor=bullMedClr, size=size.tiny, title="Bullish Mat Hold")
-plotshape(i_showMulti  and bullRSI and volOk and bullish_three_line_strike, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3LS", textcolor=bullMedClr, size=size.tiny, title="Bullish Three Line Strike")
-plotshape(i_showTriple and bullRSI and volOk and three_inside_up,      style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3IU",   textcolor=bullMedClr, size=size.tiny, title="Three Inside Up")
-plotshape(i_showMulti  and bullRSI and volOk and bullish_breakaway,    style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Brkwy", textcolor=bullMedClr, size=size.tiny, title="Bullish Breakaway")
-plotshape(i_showTriple and bullRSI and volOk and three_stars_in_south, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3SS",   textcolor=bullMedClr, size=size.tiny, title="Three Stars in South")
-plotshape(i_showDouble and bullRSI and volOk and last_engulfing_bottom,style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="LEB",   textcolor=bullMedClr, size=size.tiny, title="Last Engulfing Bottom")
-plotshape(i_showDouble and bullRSI and volOk and homing_pigeon,        style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="HPig",  textcolor=bullMedClr, size=size.tiny, title="Homing Pigeon")
+f_bearName() =>
+    string n = ""
+    // High reliability
+    if three_black_crows
+        n := "3 Black Crows"
+    else if evening_star
+        n := "Evening Star"
+    else if evening_star_doji
+        n := "Evening Star Doji"
+    else if bearish_engulfing
+        n := "Bearish Engulfing"
+    else if three_outside_down
+        n := "3 Outside Down"
+    else if abandoned_baby_top
+        n := "Abandoned Baby"
+    // Medium reliability
+    else if dark_cloud_cover
+        n := "Dark Cloud Cover"
+    else if bearish_harami
+        n := "Bearish Harami"
+    else if bearish_harami_cross
+        n := "Harami Cross"
+    else if bearish_engulfing_doji
+        n := "Engulfing Doji"
+    else if falling_three_methods
+        n := "Falling 3 Methods"
+    else if bearish_three_line_strike
+        n := "3 Line Strike"
+    else if three_inside_down
+        n := "3 Inside Down"
+    else if last_engulfing_top
+        n := "Last Engulf"
+    else if bearish_breakaway
+        n := "Breakaway"
+    else if descending_hawk
+        n := "Desc Hawk"
+    else if upside_gap_two_crows
+        n := "Gap 2 Crows"
+    else if advance_block
+        n := "Advance Block"
+    else if two_crows
+        n := "Two Crows"
+    // Low reliability
+    else if shooting_star
+        n := "Shooting Star"
+    else if shooting_star_doji
+        n := "Shooting Star Doji"
+    else if the_hanging_man
+        n := "Hanging Man"
+    else if gravestone_doji_top
+        n := "Gravestone Doji"
+    else if dragonfly_doji_top
+        n := "Dragonfly Doji"
+    n
 
-// --- BULLISH: Low Reliability (Single candle) ---
-plotshape(i_showSingle and bullRSI and volOk and hammer,               style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="Ham",   textcolor=bullLowClr, size=size.tiny, title="Hammer")
-plotshape(i_showSingle and bullRSI and volOk and inverted_hammer,      style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="IHam",  textcolor=bullLowClr, size=size.tiny, title="Inverted Hammer")
-plotshape(i_showSingle and bullRSI and volOk and dragonfly_doji_bottom,style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="DFly",  textcolor=bullLowClr, size=size.tiny, title="Dragonfly Doji Bottom")
-plotshape(i_showMulti  and bullRSI and volOk and concealing_baby_swallow, style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="CBS", textcolor=bullLowClr, size=size.tiny, title="Concealing Baby Swallow")
+bullName = f_bullName()
+bearName = f_bearName()
 
-// --- BEARISH: High Reliability (Triple+) ---
-plotshape(i_showTriple and bearRSI and volOk and three_black_crows,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="3BC",   textcolor=bearHighClr, size=size.small, title="Three Black Crows")
-plotshape(i_showTriple and bearRSI and volOk and evening_star,         style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="EStar",  textcolor=bearHighClr, size=size.small, title="Evening Star")
-plotshape(i_showTriple and bearRSI and volOk and evening_star_doji,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="ESDoji", textcolor=bearHighClr, size=size.small, title="Evening Star Doji")
-plotshape(i_showDouble and bearRSI and volOk and bearish_engulfing,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="Eng",    textcolor=bearHighClr, size=size.small, title="Bearish Engulfing")
-plotshape(i_showTriple and bearRSI and volOk and three_outside_down,   style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="3OD",    textcolor=bearHighClr, size=size.small, title="Three Outside Down")
-plotshape(i_showTriple and bearRSI and volOk and abandoned_baby_top,   style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="ABaby",  textcolor=bearHighClr, size=size.small, title="Abandoned Baby Top")
+// ==================================================================================
+// Plot Signals — 6 plotshape calls + labels for pattern names
+// ==================================================================================
 
-// --- BEARISH: Medium Reliability ---
-plotshape(i_showDouble and bearRSI and volOk and dark_cloud_cover,     style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="DCC",   textcolor=bearMedClr, size=size.tiny, title="Dark Cloud Cover")
-plotshape(i_showDouble and bearRSI and volOk and bearish_harami,       style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="Harami", textcolor=bearMedClr, size=size.tiny, title="Bearish Harami")
-plotshape(i_showDouble and bearRSI and volOk and bearish_harami_cross, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="HCross", textcolor=bearMedClr, size=size.tiny, title="Bearish Harami Cross")
-plotshape(i_showDouble and bearRSI and volOk and bearish_engulfing_doji,style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="EDoji", textcolor=bearMedClr, size=size.tiny, title="Bearish Engulfing Doji")
-plotshape(i_showMulti  and bearRSI and volOk and falling_three_methods,style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="F3M",   textcolor=bearMedClr, size=size.tiny, title="Falling Three Methods")
-plotshape(i_showMulti  and bearRSI and volOk and bearish_three_line_strike, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="3LS", textcolor=bearMedClr, size=size.tiny, title="Bearish Three Line Strike")
-plotshape(i_showTriple and bearRSI and volOk and three_inside_down,    style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="3ID",   textcolor=bearMedClr, size=size.tiny, title="Three Inside Down")
-plotshape(i_showDouble and bearRSI and volOk and last_engulfing_top,   style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="LET",   textcolor=bearMedClr, size=size.tiny, title="Last Engulfing Top")
-plotshape(i_showMulti  and bearRSI and volOk and bearish_breakaway,    style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="Brkwy", textcolor=bearMedClr, size=size.tiny, title="Bearish Breakaway")
-plotshape(i_showDouble and bearRSI and volOk and descending_hawk,      style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="DHawk", textcolor=bearMedClr, size=size.tiny, title="Descending Hawk")
-plotshape(i_showTriple and bearRSI and volOk and upside_gap_two_crows, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="UG2C",  textcolor=bearMedClr, size=size.tiny, title="Upside Gap Two Crows")
-plotshape(i_showTriple and bearRSI and volOk and advance_block,        style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="AdvB",  textcolor=bearMedClr, size=size.tiny, title="Advance Block")
-plotshape(i_showDouble and bearRSI and volOk and two_crows,            style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="2Crow", textcolor=bearMedClr, size=size.tiny, title="Two Crows")
+// Bull shapes by tier
+plotshape(highRelBull, style=shape.triangleup, location=location.belowbar, color=bullHighClr, size=size.small, title="High Rel Bull")
+plotshape(medRelBull,  style=shape.triangleup, location=location.belowbar, color=bullMedClr,  size=size.tiny,  title="Med Rel Bull")
+plotshape(lowRelBull,  style=shape.triangleup, location=location.belowbar, color=bullLowClr,  size=size.tiny,  title="Low Rel Bull")
 
-// --- BEARISH: Low Reliability (Single candle) ---
-plotshape(i_showSingle and bearRSI and volOk and shooting_star,        style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="SStar", textcolor=bearLowClr, size=size.tiny, title="Shooting Star")
-plotshape(i_showSingle and bearRSI and volOk and shooting_star_doji,   style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="SSDoji",textcolor=bearLowClr, size=size.tiny, title="Shooting Star Doji")
-plotshape(i_showSingle and bearRSI and volOk and the_hanging_man,      style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="Hang",  textcolor=bearLowClr, size=size.tiny, title="Hanging Man")
-plotshape(i_showSingle and bearRSI and volOk and gravestone_doji_top,  style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="GStone",textcolor=bearLowClr, size=size.tiny, title="Gravestone Doji Top")
-plotshape(i_showSingle and bearRSI and volOk and dragonfly_doji_top,   style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="DFly",  textcolor=bearLowClr, size=size.tiny, title="Dragonfly Doji Top")
+// Bear shapes by tier
+plotshape(highRelBear, style=shape.triangledown, location=location.abovebar, color=bearHighClr, size=size.small, title="High Rel Bear")
+plotshape(medRelBear,  style=shape.triangledown, location=location.abovebar, color=bearMedClr,  size=size.tiny,  title="Med Rel Bear")
+plotshape(lowRelBear,  style=shape.triangledown, location=location.abovebar, color=bearLowClr,  size=size.tiny,  title="Low Rel Bear")
+
+// Pattern name labels (dynamic text via label.new)
+if i_showLabels and anyBull
+    lbl_color = highRelBull ? bullHighClr : medRelBull ? bullMedClr : bullLowClr
+    label.new(bar_index, low, bullName, style=label.style_none, textcolor=lbl_color, size=size.small)
+
+if i_showLabels and anyBear
+    lbl_color = highRelBear ? bearHighClr : medRelBear ? bearMedClr : bearLowClr
+    label.new(bar_index, high, bearName, style=label.style_none, textcolor=lbl_color, size=size.small)
 
 // ==================================================================================
 // Alert Conditions
