@@ -1,83 +1,175 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
-// © veryfid
+// © veryfid — enhanced by claygrace74
 
-//@version=4
-study("Center Of Gravity Oscillator", shorttitle="COG", resolution = "", precision = 4)
+//@version=6
+indicator("Center Of Gravity Oscillator", shorttitle="COG", precision=4)
 
-theme = input("CUSTOM", "Theme:", options=["CUSTOM", "CLEAN", "FIBONACCI", "FIBONACCI 2"])
-src =input(close)
-length =input(9)
-smooth = input("NONE", "Use Smoothing?", options=["RMA", "NONE"])
-length5 =input(2,"Smoothing Length")
-length2 =input(20,"Previous Hig/Low Length")
-length3 =input(200,"LSMA Length")
-length4 =input(1000,"fib Length")
-col1 = input(color.white, "Fib Color")
-fib = input(false, "Show Fibonacci Levels?")
-pline = input(true, "Show Price Line?")
-showcol = input(false, "Dual colored trigger?")
-showhl = input(false,"Show High/Low Levels")
+// ==================== COG Settings ====================
+var cog_group = "COG Settings"
+src     = input.source(close, "Source", group=cog_group)
+length  = input.int(9, "COG Length", minval=1, group=cog_group)
+smooth  = input.string("NONE", "Smoothing", options=["RMA", "NONE"], group=cog_group)
+length5 = input.int(2, "Smoothing Length", minval=1, group=cog_group)
 
-if theme == "FIBONACCI 2"
-    showcol := true
+// ==================== Trigger Settings ====================
+var trig_group = "Trigger Settings"
+windowsize = input.int(3, "Window Size", group=trig_group)
+trigOffset = input.float(0.85, "Offset", group=trig_group)
+sigma      = input.float(6.0, "Sigma", group=trig_group)
 
-windowsize = input(title="Trigger Window Size", type=input.integer, defval=3)
-offset = input(title="Trigger Offset", type=input.float, defval=0.85)
-sigma = input(title="Trigger Sigma", type=input.float, defval=6)
+// ==================== Theme & Display ====================
+var theme_group = "Theme & Display"
+theme   = input.string("CUSTOM", "Theme", options=["CUSTOM", "CLEAN", "FIBONACCI", "FIBONACCI 2"], group=theme_group)
+pline   = input.bool(true, "Show Price Line", group=theme_group)
+showcol = input.bool(false, "Dual Colored Trigger", group=theme_group)
+showhl  = input.bool(false, "Show High/Low Levels", group=theme_group)
 
-COG1 = cog(src, length)
-COG= COG1
-rma = rma(COG1,length5)
+// ==================== LSMA & Range ====================
+var lsma_group = "LSMA & Range"
+length2 = input.int(20, "Previous High/Low Length", minval=1, group=lsma_group)
+length3 = input.int(200, "LSMA Length", minval=1, group=lsma_group)
 
-if smooth == "RMA"
-	COG := rma
+// ==================== Fibonacci Settings ====================
+var fib_group = "Fibonacci Settings"
+fib     = input.bool(false, "Show Fibonacci Levels", group=fib_group)
+length4 = input.int(1000, "Fibonacci Lookback", minval=1, group=fib_group)
+col1    = input.color(color.white, "Fibonacci Color", group=fib_group)
+
+// ==================== Signal Settings ====================
+var sig_group = "Signal Settings"
+i_showSignals    = input.bool(true, "Show Buy/Sell Signals", group=sig_group)
+i_showDivergence = input.bool(false, "Show Divergence Signals", group=sig_group)
+i_divLookback    = input.int(5, "Divergence Lookback", minval=3, group=sig_group)
+
+// ==================================================================================
+// Theme Logic
+// ==================================================================================
+bool useFib    = fib
+int  fibLen    = length4
+bool useDualCol = showcol
+
 if theme == "FIBONACCI"
-	fib := true
-    length4 := 50
+    useFib  := true
+    fibLen  := 50
 if theme == "FIBONACCI 2"
-	fib := true
-    length4 := 30
+    useFib    := true
+    fibLen    := 30
+    useDualCol := true
+
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+COG1   = ta.cog(src, length)
+cogRma = ta.rma(COG1, length5)
+
+COG = smooth == "RMA" ? cogRma : COG1
 if theme == "CLEAN"
-	COG := rma
-	length5 := 9
-plot(-5, color=color.black,transp=50, style = plot.style_line, linewidth = 1)
-p1 = plot(theme == "FIBONACCI" or theme == "FIBONACCI 2" ? na : lowest(COG,length2),color = color.green,transp = 100, title = "Previous Low")
-p2 = plot(theme == "FIBONACCI" or theme == "FIBONACCI 2" ? na : highest(COG,length2),color = color.red,transp = 100, title = "Previous High")
-c2 =plot(pline ? COG : na,color = change(COG) > 0 ? #00ffaa : color.red, linewidth= theme == "FIBONACCI 2" ? 3 : 1,title = "COG Trend Line",trackprice =true )
-c =plot(theme == "FIBONACCI 2" or theme == "CLEAN" ? na : COG,color = color.white, linewidth=2,title = "COG")
-trigger = alma(COG, windowsize, offset, sigma)
-lsma = linreg(COG,length3,0)
-fill(p1,c,title = "Previous Low")
-fill(p2,c,transp = 80,title = "Previous High")
-plot(theme == "FIBONACCI" or theme == "FIBONACCI 2"? na : lsma,color=color.red,title = "LSMA")
-plot(theme == "FIBONACCI 2" or theme == "CLEAN" ? na : trigger,title = "Trigger",color = showcol ? change(COG) > 0 ?  color.green : color.red : color.blue) 
-plot(theme == "CLEAN" ? COG : na, color = color.blue, linewidth = 3)
-plot(theme == "CLEAN" ? sma(COG,2) : na, color = color.white, linewidth = 2)
+    COG := ta.rma(COG1, 9)
 
-h = highest(COG,length4)
-l = lowest(COG,length4)
-range = h - l
+trigger = ta.alma(COG, windowsize, trigOffset, sigma)
+lsma    = ta.linreg(COG, length3, 0)
 
-l1 = h - range * 0.236 
-l2 = h - range * 0.382  
-l3 = h - range * 0.618
-l4 = h - range * 0.764
-l5 = h - range * 0.5
+// Momentum coloring — acceleration based
+cogChange = ta.change(COG)
+cogAccel  = ta.change(cogChange)
+cogColor  = cogAccel > 0 ? (cogChange > 0 ? color.green : color.new(color.orange, 30)) : (cogChange > 0 ? color.new(color.green, 50) : color.red)
 
-f1 = plot(fib ? l1 : na, color = col1, transp = 60, title = "0.236")
-f2 = plot(fib ? l2 : na, color = col1, transp = 60, title = "0.382")
-f3 = plot(fib ? l3 : na, color = col1, transp = 60, title = "0.618")
-f4 = plot(fib ? l4 : na, color = col1, transp = 60, title = "0.764")
-f5 = plot(fib ? l5 : na, color = theme == "FIBONACCI 2" ? #ffe0b2 : col1, transp = theme == "FIBONACCI 2" ? 20 : 60, title = "0.5")
+// Previous high/low
+cogHigh = ta.highest(COG, length2)
+cogLow  = ta.lowest(COG, length2)
 
-p3 = plot(showhl or theme == "FIBONACCI" ? h : na, "high")
-p4 = plot(showhl or theme == "FIBONACCI" ? l : na, "Low")
-p5 = plot(theme == "FIBONACCI 2" ? h : na, "high", color = color.red)
-p6 = plot(theme == "FIBONACCI 2" ? l : na, "Low", color = color.green)
-//Conditions
-enter = crossover(COG1,trigger)
+// Fibonacci levels
+h = ta.highest(COG, fibLen)
+l = ta.lowest(COG, fibLen)
+cogRange = h - l
 
-fill(p5,f1,color.red) 
-fill(p5,f2,color.red) 
-fill(p6,f4,color.green) 
-fill(p6,f3,color.green) 
+l1 = h - cogRange * 0.236
+l2 = h - cogRange * 0.382
+l3 = h - cogRange * 0.618
+l4 = h - cogRange * 0.764
+l5 = h - cogRange * 0.5
+
+// ==================================================================================
+// Signals
+// ==================================================================================
+enter = ta.crossover(COG, trigger)
+exit  = ta.crossunder(COG, trigger)
+
+// Divergence detection (simplified)
+priceHigh    = high > ta.highest(high, i_divLookback)[1]
+cogNotHigh   = COG < ta.highest(COG, i_divLookback)[1]
+bearDiv      = priceHigh and cogNotHigh
+
+priceLow     = low < ta.lowest(low, i_divLookback)[1]
+cogNotLow    = COG > ta.lowest(COG, i_divLookback)[1]
+bullDiv      = priceLow and cogNotLow
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+
+// Reference line
+plot(-5, color=color.new(color.black, 50), style=plot.style_line, linewidth=1, title="Reference")
+
+// Previous high/low (hidden for fib themes)
+isFibTheme = theme == "FIBONACCI" or theme == "FIBONACCI 2"
+p1 = plot(not isFibTheme ? cogLow : na,  color=color.new(color.green, 100), title="Previous Low")
+p2 = plot(not isFibTheme ? cogHigh : na, color=color.new(color.red, 100),   title="Previous High")
+
+// COG price line (momentum colored)
+c2 = plot(pline ? COG : na, color=cogChange > 0 ? color.new(#00ffaa, 0) : color.new(color.red, 0), linewidth=theme == "FIBONACCI 2" ? 3 : 1, title="COG Trend Line", trackprice=true)
+
+// COG main line
+c = plot(theme != "FIBONACCI 2" and theme != "CLEAN" ? COG : na, color=cogColor, linewidth=2, title="COG")
+
+// Fills for previous high/low
+fill(p1, c, title="Previous Low Fill")
+fill(p2, c, color=color.new(color.red, 80), title="Previous High Fill")
+
+// Trigger line
+trigColor = useDualCol ? (cogChange > 0 ? color.green : color.red) : color.blue
+plot(not isFibTheme and theme != "CLEAN" ? trigger : na, title="Trigger", color=trigColor)
+
+// LSMA
+plot(not isFibTheme ? lsma : na, color=color.red, title="LSMA")
+
+// Clean theme specific
+plot(theme == "CLEAN" ? COG : na,          color=color.blue,  linewidth=3, title="COG Clean")
+plot(theme == "CLEAN" ? ta.sma(COG, 2) : na, color=color.white, linewidth=2, title="COG Clean SMA")
+
+// Fibonacci levels
+f1 = plot(useFib ? l1 : na, color=color.new(col1, 60), title="0.236")
+f2 = plot(useFib ? l2 : na, color=color.new(col1, 60), title="0.382")
+f3 = plot(useFib ? l3 : na, color=color.new(col1, 60), title="0.618")
+f4 = plot(useFib ? l4 : na, color=color.new(col1, 60), title="0.764")
+f5 = plot(useFib ? l5 : na, color=theme == "FIBONACCI 2" ? color.new(#ffe0b2, 20) : color.new(col1, 60), title="0.5")
+
+// High/low boundary lines
+p3 = plot(showhl or theme == "FIBONACCI" ? h : na, title="High")
+p4 = plot(showhl or theme == "FIBONACCI" ? l : na, title="Low")
+p5 = plot(theme == "FIBONACCI 2" ? h : na, title="High F2", color=color.red)
+p6 = plot(theme == "FIBONACCI 2" ? l : na, title="Low F2",  color=color.green)
+
+// Fibonacci 2 fills
+fill(p5, f1, color=color.new(color.red, 80))
+fill(p5, f2, color=color.new(color.red, 80))
+fill(p6, f4, color=color.new(color.green, 80))
+fill(p6, f3, color=color.new(color.green, 80))
+
+// ==================================================================================
+// Signal Shapes
+// ==================================================================================
+plotshape(i_showSignals and enter, style=shape.triangleup,   location=location.bottom, color=color.green, text="Buy",  textcolor=color.green, size=size.tiny, title="Buy Signal")
+plotshape(i_showSignals and exit,  style=shape.triangledown, location=location.top,    color=color.red,   text="Sell", textcolor=color.red,   size=size.tiny, title="Sell Signal")
+
+// Divergence background highlights
+bgcolor(i_showDivergence and bearDiv ? color.new(color.orange, 85) : na, title="Bearish Divergence")
+bgcolor(i_showDivergence and bullDiv ? color.new(color.teal, 85)   : na, title="Bullish Divergence")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(enter,    "COG Buy Signal",        "COG crossed above trigger line")
+alertcondition(exit,     "COG Sell Signal",        "COG crossed below trigger line")
+alertcondition(bullDiv,  "Bullish Divergence",     "Price making new low but COG is not — potential reversal")
+alertcondition(bearDiv,  "Bearish Divergence",     "Price making new high but COG is not — potential reversal")

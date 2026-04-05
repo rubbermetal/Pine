@@ -1,49 +1,102 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
-//@version=4
+//@version=6
+indicator("ADX and DI", shorttitle="ADX/DI")
 
-study("ADX and DI for v4")
-len = input(14)
-th = input(25)
-pt = input(75)
+// ==================== ADX Settings ====================
+var adx_group = "ADX Settings"
+len = input.int(14, "Length", minval=1, group=adx_group)
 
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showDIPlus      = input.bool(true,  "Show DI+", group=disp_group)
+i_showDIMinus     = input.bool(true,  "Show DI-", group=disp_group)
+i_showDIFill      = input.bool(true,  "Show DI+/DI- Fill", group=disp_group)
+i_showCrossSignals = input.bool(true, "Show DI Cross Signals", group=disp_group)
+i_showStrength    = input.bool(true,  "Show Trend Strength Label", group=disp_group)
+i_bullColor       = input.color(color.green, "Bullish Color (DI+)", group=disp_group)
+i_bearColor       = input.color(color.red,   "Bearish Color (DI-)", group=disp_group)
 
-TrueRange = max(max(high-low, abs(high-nz(close[1]))), abs(low-nz(close[1])))
-DirectionalMovementPlus = high-nz(high[1]) > nz(low[1])-low ? max(high-nz(high[1]), 0): 0
-DirectionalMovementMinus = nz(low[1])-low > high-nz(high[1]) ? max(nz(low[1])-low, 0): 0
+// ==================== Zone Settings ====================
+var zone_group = "Zone Settings"
+th       = input.int(25, "Weak/Strong Threshold", minval=0, maxval=100, group=zone_group)
+strongTh = input.int(50, "Strong Trend Threshold", minval=0, maxval=100, group=zone_group)
 
-SmoothedTrueRange = 0.0
-SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1])/len) + TrueRange
+// ==================================================================================
+// Core Calculations (Wilder Smoothing)
+// ==================================================================================
+TrueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
+DirectionalMovementPlus  = high - nz(high[1]) > nz(low[1]) - low ? math.max(high - nz(high[1]), 0) : 0
+DirectionalMovementMinus = nz(low[1]) - low > high - nz(high[1]) ? math.max(nz(low[1]) - low, 0) : 0
 
-SmoothedDirectionalMovementPlus = 0.0
-SmoothedDirectionalMovementPlus := nz(SmoothedDirectionalMovementPlus[1]) - (nz(SmoothedDirectionalMovementPlus[1])/len) + DirectionalMovementPlus
+float SmoothedTrueRange = 0.0
+SmoothedTrueRange := nz(SmoothedTrueRange[1]) - (nz(SmoothedTrueRange[1]) / len) + TrueRange
 
-SmoothedDirectionalMovementMinus = 0.0
-SmoothedDirectionalMovementMinus := nz(SmoothedDirectionalMovementMinus[1]) - (nz(SmoothedDirectionalMovementMinus[1])/len) + DirectionalMovementMinus
+float SmoothedDMPlus = 0.0
+SmoothedDMPlus := nz(SmoothedDMPlus[1]) - (nz(SmoothedDMPlus[1]) / len) + DirectionalMovementPlus
 
-DIPlus = SmoothedDirectionalMovementPlus / SmoothedTrueRange * 100
-DIMinus = SmoothedDirectionalMovementMinus / SmoothedTrueRange * 100
-DX = abs(DIPlus-DIMinus) / (DIPlus+DIMinus)*100
-ADX = sma(DX, len)
-ub = plot(100, color=color.rgb(108, 109, 109))
-top = plot(pt, color=color.rgb(108, 109, 109))
-plot(65, color=color.rgb(122,136,138))
-plot(55, color=color.rgb(122,136,138))
-plot(45, color=color.rgb(122,136,138))
-plot(35, color=color.rgb(122,136,138))
-bottom = plot(th, color=color.rgb(108, 109, 109))
-lb = plot(0, color=color.rgb(108, 109, 109))
-colorUp = color.rgb(0, 253, 8)
-colorDown = color.rgb(255, 0, 0)
-colorNeutral = color.rgb(255,255,255)
+float SmoothedDMMinus = 0.0
+SmoothedDMMinus := nz(SmoothedDMMinus[1]) - (nz(SmoothedDMMinus[1]) / len) + DirectionalMovementMinus
 
-fill(bottom, lb,color.rgb(203, 248, 255))
-fill(top,bottom,color.rgb(108, 109, 109))
-fill(ub,top,color.rgb(238, 130, 130))
-//Plus = plot(DIPlus, color=color.rgb(0, 255, 8), title="DI+", style=plot.style_area)
-//Minus = plot(DIMinus, color=color.rgb(255, 0, 0), title="DI-", style=plot.style_area)
-bands = DIPlus > DIMinus ? colorUp : DIPlus < DIMinus ? colorDown : colorNeutral
-//fill(Plus, Minus, bands, 50)
-plot(ADX, color=bands, title="ADX", linewidth=2)
+DIPlus  = SmoothedDMPlus  / SmoothedTrueRange * 100
+DIMinus = SmoothedDMMinus / SmoothedTrueRange * 100
+DX  = math.abs(DIPlus - DIMinus) / (DIPlus + DIMinus) * 100
+ADX = ta.sma(DX, len)
 
+// Direction and signals
+bullish    = DIPlus > DIMinus
+diCrossUp  = ta.crossover(DIPlus, DIMinus)
+diCrossDown = ta.crossunder(DIPlus, DIMinus)
+adxRising  = ta.change(ADX) > 0
+
+// Trend strength category
+strengthText  = ADX >= 75 ? "EXTREME" : ADX >= strongTh ? "STRONG" : ADX >= th ? "TRENDING" : "NO TREND"
+strengthColor = ADX >= 75 ? color.new(color.orange, 0) : ADX >= strongTh ? color.new(color.yellow, 0) : ADX >= th ? color.new(i_bullColor, 30) : color.new(color.gray, 30)
+
+// ==================================================================================
+// Grid Layout
+// ==================================================================================
+h100    = hline(100, "100", color=color.new(color.gray, 80), linestyle=hline.style_solid)
+hStrong = hline(strongTh, "Strong Threshold", color=color.new(color.gray, 50), linestyle=hline.style_dashed)
+hWeak   = hline(th,       "Weak/Strong Threshold", color=color.new(color.gray, 50), linestyle=hline.style_solid)
+h0      = hline(0,   "0",   color=color.new(color.gray, 80), linestyle=hline.style_solid)
+
+// Zone fills
+fill(h0, hWeak,      color=color.new(color.green, 92))   // No trend zone (safe)
+fill(hStrong, h100,  color=color.new(color.orange, 92))   // Extreme zone (warning)
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+
+// DI+ and DI- lines with fill
+pPlus  = plot(i_showDIPlus  ? DIPlus  : na, "DI+", color=color.new(i_bullColor, 30), linewidth=1)
+pMinus = plot(i_showDIMinus ? DIMinus : na, "DI-", color=color.new(i_bearColor, 30), linewidth=1)
+fill(pPlus, pMinus, color=i_showDIFill ? (bullish ? color.new(i_bullColor, 85) : color.new(i_bearColor, 85)) : color(na), title="DI Fill")
+
+// ADX line — gradient colored by value, green/red tint by DI direction
+adxColor = bullish ? color.from_gradient(ADX, 0, 75, color.new(i_bullColor, 70), i_bullColor) : color.from_gradient(ADX, 0, 75, color.new(i_bearColor, 70), i_bearColor)
+plot(ADX, "ADX", color=adxColor, linewidth=2)
+
+// DI cross signals
+plotshape(i_showCrossSignals and diCrossUp,   style=shape.triangleup,   location=location.bottom, color=i_bullColor, text="DI+", textcolor=i_bullColor, size=size.tiny, title="DI+ Cross Up")
+plotshape(i_showCrossSignals and diCrossDown, style=shape.triangledown, location=location.top,    color=i_bearColor, text="DI-", textcolor=i_bearColor, size=size.tiny, title="DI- Cross Down")
+
+// ==================================================================================
+// Trend Strength Label
+// ==================================================================================
+var tbl = table.new(position.top_right, 1, 1, bgcolor=color.new(color.black, 50), border_width=1, border_color=color.new(color.gray, 50))
+
+if i_showStrength and barstate.islast
+    table.cell(tbl, 0, 0, strengthText + " (" + str.tostring(ADX, "#.0") + ")", bgcolor=strengthColor, text_color=color.white, text_size=size.small)
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(diCrossUp,                          "DI+ Crosses Above DI-",   "DI+ crossed above DI- — potential bullish signal")
+alertcondition(diCrossDown,                        "DI+ Crosses Below DI-",   "DI+ crossed below DI- — potential bearish signal")
+alertcondition(ta.crossover(ADX, th),              "ADX Above Threshold",     "ADX crossed above weak/strong threshold — trend strengthening")
+alertcondition(ta.crossunder(ADX, th),             "ADX Below Threshold",     "ADX crossed below weak/strong threshold — trend weakening")
+alertcondition(ADX > strongTh and adxRising,       "Strong Trend Intensifying","ADX above strong threshold and rising")
+alertcondition(diCrossUp and ADX > th,             "Confirmed Bullish Entry", "DI+ crossed DI- with ADX confirming trend strength")

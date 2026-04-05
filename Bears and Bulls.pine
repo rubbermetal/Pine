@@ -1,167 +1,222 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
+//@version=6
+indicator(title="Bears and Bulls", shorttitle="B&B", overlay=true)
 
-study(title="Bears and Bulls", overlay=true)
-body=close-open
-range=high-low
-middle=(open+close)/2
-abody=abs(body)
-ratio=abody/range
-longcandle= (ratio>0.6)
-bodytop=max(open, close)
-bodybottom=min(open, close)
-shadowtop=high-bodytop
-shadowbottom=bodybottom-low
+// ==================== RSI Filter Settings ====================
+var rsi_group = "RSI Filter Settings"
+rsisrc  = input.source(close,  "RSI Source", group=rsi_group)
+rsilen  = input.int(14,       "RSI Length", minval=1, group=rsi_group)
+rsiob   = input.int(60,       "RSI Overbought Level", minval=50, maxval=100, group=rsi_group)
+rsios   = input.int(50,       "RSI Oversold Level", minval=0, maxval=50, group=rsi_group)
+i_useRSI = input.bool(true,   "Filter Patterns by RSI", group=rsi_group)
 
-//Define Bearish Candle Patterns ******************************************************
+// ==================== Pattern Categories ====================
+var cat_group = "Pattern Categories"
+i_showSingle = input.bool(true, "Single-Candle Patterns", group=cat_group)
+i_showDouble = input.bool(true, "Double-Candle Patterns", group=cat_group)
+i_showTriple = input.bool(true, "Triple-Candle Patterns", group=cat_group)
+i_showMulti  = input.bool(true, "Multi-Candle Patterns (4-5 bars)", group=cat_group)
 
-evening_star = (close[2] > open[2] and abs(close[2] - open[2])/(high[2] - low[2]) >= 0.7 and 0.3 > abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.1 and close < open and abs(close - open) / (high-low) >= 0.7 and close[2] < close[1] and close[2] < open[1] and close[1] > open and open[1] > open and close < close[2])
-evening_star_doji = (close[2]>open[2] and abs(close[2]-open[2])/(high[2]-low[2])>=0.7 and abs(close[1]-open[1])/(high[1]-low[1])<0.1 and close<open and abs(close-open)/(high-low)>=0.7 and close[2]<close[1] and close[2]<open[1] and close[1]>open and open[1]>open and close<close[2] and (high[1]-max(close[1],open[1]))>(3*abs(close[1]-open[1])) and (min(close[1],open[1])-low[1])>(3*abs(close[1]-open[1])))
-shooting_star=(body[1]>0 and longcandle[1] and high>high[1] and shadowtop>2*abody and shadowbottom<0.3*abody)
-shooting_star_doji=(close[1]>open[1] and abs(close[1]-open[1])/(high[1]-low[1])>=0.7 and abs(close-open)/(high-low)<0.1 and close[1]<close and close[1]<open and (high-max(close,open))>(3*abs(close-open)) and (min(close,open)-low)>(3*abs(close-open)))
-dark_cloud_cover=(close[1]>open[1] and abs(close[1]-open[1])/(high[1]-low[1])>=0.7 and close<open and abs(close-open)/(high-low)>=0.7 and open>=close[1] and close>open[1] and close<((open[1]+close[1])/2))
-the_hanging_man=(close<open and 0.3>abs(close-open)/(high-low)>=0.1 and (min(close,open)-low)>=(2*abs(close-open)) and (high-max(close,open))>(0.25*abs(close-open)))
-bearish_engulfing=(close[1]>open[1] and 0.3>abs(close[1]-open[1])/(high[1]-low[1])>=0.1 and close<open and abs(close-open)/(high-low)>=0.7 and high[1]<open and low[1]>close)
-bearish_engulfing_doji=(abs(close[1]-open[1])/(high[1]-low[1])<0.1 and close>open and abs(close-open)/(high-low)>=0.7 and high[1]<close and low[1]>open and (high[1]-max(close[1],open[1]))>(3*abs(close[1]-open[1])) and (min(close[1],open[1])-low[1])<=abs(close[1]-open[1]))
-bearish_harami=(body[1]>0 and body<0 and longcandle[1] and bodybottom>bodybottom[1] and bodytop<bodytop[1])
-falling_three_methods=(body[4]<0 and body[3]>0 and body[1]>0 and body<0 and longcandle[4] and longcandle and close[2]>close[3] and close[1]>close[2] and low[2]>low[3] and low[1]>low[2] and high[1]<high[4] and open<close[1] and close<low[4] and close<low[3] and close<low[2] and close<low[1])
-bearish_harami_cross=(body[1]>0 and longcandle[1] and bodybottom>bodybottom[1] and bodytop<bodytop[1] and ratio<0.3 and range<0.3*range[1])
-three_inside_down=(body[2]>0 and body[1]<0 and body<0 and bearish_harami[1] and close<close[1])
-last_engulfing_top=(body[1]<0 and body>0 and bodybottom<bodybottom[1] and bodytop>bodytop[1] and longcandle)
-bearish_three_line_strike=(body[3]<0 and body[2]<0 and body[1]<0 and body>0 and longcandle[3] and longcandle[2] and longcandle[1] and close[2]<close[3] and close[1]<close[2] and open<close[1] and close>open[3])
-gravesstone_doji_top=(body[1]>0 and longcandle[1] and high>high[1] and shadowtop>3*abody and shadowbottom<shadowtop/3)
-//
-abandoned_baby_top=(body[2]>0 and body<0 and longcandle[2] and ratio[1]<0.3 and low[1]>high[2] and low[1]>high)
-descending_hawk=(body[1]>0 and body>0 and longcandle[1] and bodybottom>bodybottom[1] and bodytop<bodytop[1])
-three_outside_down=(body[2]>0 and body[1]<0 and body<0 and bearish_engulfing[1] and close<close[1])
-three_black_crows=(body[2]<0 and body[1]<0 and body<0 and longcandle[2] and longcandle[1] and longcandle and low[1]<low[2] and low<low[1] and close[1]<close[2] and close<close[1] and open[1]<open[2] and open[1]>close[2] and open<open[1] and open>close[1])
-upside_gap_two_crows=(body[2]>0 and body[1]<0 and body<0 and longcandle[2] and open[1]>close[2] and bodytop>bodytop[1] and bodybottom<bodybottom[1] and close>close[2])
-dragonfly_doji_top=(body[1]>0 and longcandle[1] and high>high[1] and shadowbottom>3*abody and shadowtop<shadowbottom/3)
-advance_block=(body[2]>0 and body[1]>0 and body>0 and high[2]<high[1] and high[1]<high and open[1]>bodybottom[2] and open[1]<bodytop[2] and open>bodybottom[1] and open<bodytop[1] and abody[1]<abody[2] and abody<abody[1])
-bearish_breakaway=(body[4]>0 and body[3]>0 and body<0 and open[3]>close[4] and close[2]>close[3] and close[1]>close[2] and longcandle and close>close[4] and close<open[3])
-two_crows=(body[2]>0 and body[1]<0 and body<0 and longcandle[2] and open[1]>close[2] and close[1]>close[2] and open<bodytop[1] and open>bodybottom[1] and close<bodytop[2] and close>bodybottom[2])
+// ==================== Volume Confirmation ====================
+var vol_group = "Volume Confirmation"
+i_useVol    = input.bool(false, "Require Volume Spike", group=vol_group)
+volMult     = input.float(1.5,  "Volume Spike Multiplier", minval=1.0, step=0.1, group=vol_group)
+volLookback = input.int(20,     "Volume Average Lookback", minval=5, group=vol_group)
 
-// Define Bullish Candle Patterns
-morning_star=(close[2]<open[2] and abs(close[2]-open[2])/(high[2]-low[2])>=0.7 and 0.3>abs(close[1]-open[1])/(high[1]-low[1])>=0.1 and close>open and abs(close-open)/(high-low)>=0.7 and close[2]>close[1] and close[2]>open[1] and close[1]<open and open[1]<open and close>close[2])
-morning_star_doji=(close[2]<open[2] and abs(close[2]-open[2])/(high[2]-low[2])>=0.7 and abs(close[1]-open[1])/(high[1]-low[1])<0.1 and close>open and abs(close-open)/(high-low)>=0.7 and close[2]>close[1] and close[2]>open[1] and close[1]<open and open[1]<open and close>close[2] and (high[1]-max(close[1],open[1]))>(3*abs(close[1]-open[1])) and (min(close[1],open[1])-low[1])>(3*abs(close[1]-open[1])))
-piercing_line=(close[1]<open[1] and abs(close[1]-open[1])/(high[1]-low[1])>=0.7 and close>open and abs(close-open)/(high-low)>=0.7 and open<=close[1] and close<open[1] and close<((open[1]+close[1])/2))
-bullish_harami=(close[1]<open[1] and abs(close[1]-open[1])/(high[1]-low[1])>=0.7 and 0.3>abs(close-open)/(high-low)>=0.1 and high<open[1] and low>close[1])
-bullish_engulfing=(body[1]<0 and body>0 and bodybottom<bodybottom[1] and bodytop>bodytop[1] and longcandle)
-bullish_engulfing_doji=(abs(close[1]-open[1])/(high[1]-low[1])<0.1 and close>open and abs(close-open)/(high-low)>=0.7 and high[1]<close and low[1]>open and (high[1]-max(close[1],open[1]))>(3*abs(close[1]-open[1])) and (min(close[1],open[1])-low[1])<=abs(close[1]-open[1]))
-bullish_harami_cross=(body[1]<0 and longcandle[1] and bodybottom>bodybottom[1] and bodytop<bodytop[1] and ratio<0.3 and range<0.3*range[1])
-three_white_soldiers=(body[2]>0 and body[1]>0 and body>0 and high[1]>high[2] and high>high[1] and close[1]>close[2] and close>close[1] and open[1]>open[2] and open[1]<close[2] and open>open[1] and open<close[1])
-bullish_breakaway=(body[4]<0 and body[3]<0 and body>0 and open[3]<close[4] and close[2]<close[3] and close[1]<close[2] and longcandle and close<close[4] and close>open[3])
-three_stars_in_the_south=(body[2]<0 and body[1]<0 and body<0 and shadowtop[2]<range[2]/4 and shadowbottom[2]>abody[2]/2 and low[1]>low[2] and high[1]<high[2] and abody[1]<abody[2]  and shadowtop[1]<range[1]/4 and shadowbottom[1]>abody[1]/2 and low>low[1] and high<high[1] and abody<abody[1] and shadowtop<range/4 and shadowbottom<range/4)
-last_engulfing_bottom=(body[1]>0 and body<0 and bodybottom<bodybottom[1] and bodytop>bodytop[1] and longcandle)
-//
-bullish_mat_hold=(body[4]>0 and body[3]<0 and body[1]<0 and body>0 and longcandle[4] and close[3]>close[4] and close[2]<close[3] and close[1]<close[2] and high[2]<high[3] and high[1]<high[2] and low[1]>low[4] and open>close[1] and close>high[4] and  close>high[3] and close>high[2] and close>high[1])
-rising_three_methods=(body[4]>0 and body[3]<0 and body[1]<0 and body>0 and longcandle[4] and longcandle and close[2]<close[3] and close[1]<close[2] and high[2]<high[3] and high[1]<high[2] and low[1]>low[4] and open>close[1] and close>high[4] and close>high[3] and close>high[2] and close>high[1])
-bullish_three_line_strike=(body[3]>0 and body[2]>0 and body[1]>0 and body<0 and longcandle[3] and longcandle[2] and longcandle[1] and close[2]>close[3] and close[1]>close[2] and open>close[1] and close<open[3])
-hammer=(body[1]<0 and longcandle[1] and low<low[1] and shadowbottom>2*abody and shadowtop<0.3*abody)
-inverted_hammer=(body[1]<0 and longcandle[1] and low<low[1] and shadowtop>2*abody and shadowbottom<0.3*abody)
-concealing_baby_swallow=(body[3]<0 and body[2]<0 and body[1]<0 and body<0 and ratio[3]>0.8 and ratio[2]>0.8 and ratio>0.8 and open[1]<close[2] and high[1]>close[2] and shadowtop[1]>0.6*(abody[1]+shadowbottom[1]) and bodybottom<bodybottom[1] and bodytop>high[1])
-dragonfly_doji_bottom=(body[1]<0 and longcandle[1] and low<low[1] and shadowbottom>3*abody and shadowtop<shadowbottom/3)
-homing_pigeon=(body[1]<0 and body<0 and longcandle[1] and bodybottom>bodybottom[1] and bodytop<bodytop[1])
-three_outside_up=(body[2]<0 and body[1]>0 and body>0 and bullish_engulfing[1] and close>close[1])
-three_inside_up=(body[2]<0 and body[1]>0 and body>0 and bullish_harami[1] and close>close[1])
-abandoned_baby_bottom=(body[2]<0 and body>0 and longcandle[2] and ratio[1]<0.3 and high[1]<low[2] and high[1]<low)
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+bullHighClr = input.color(#04F909, "Bull High Reliability", group=disp_group)
+bullMedClr  = input.color(color.new(#04F909, 30), "Bull Medium Reliability", group=disp_group)
+bullLowClr  = input.color(color.new(#04F909, 60), "Bull Low Reliability", group=disp_group)
+bearHighClr = input.color(#F90404, "Bear High Reliability", group=disp_group)
+bearMedClr  = input.color(color.new(#F90404, 30), "Bear Medium Reliability", group=disp_group)
+bearLowClr  = input.color(color.new(#F90404, 60), "Bear Low Reliability", group=disp_group)
 
+// ==================================================================================
+// Core Calculations
+// ==================================================================================
+body         = close - open
+candleRange  = high - low
+middle       = (open + close) / 2
+abody        = math.abs(body)
+ratio        = candleRange > 0 ? abody / candleRange : 0
+longcandle   = ratio > 0.6
+bodytop      = math.max(open, close)
+bodybottom   = math.min(open, close)
+shadowtop    = high - bodytop
+shadowbottom = bodybottom - low
 
+// RSI
+rsival  = ta.rsi(rsisrc, rsilen)
+isrsiob = rsival >= rsiob
+isrsios = rsival <= rsios
 
+// Volume
+volAvg   = ta.sma(volume, volLookback)
+volSpike = volume > volAvg * volMult
+volOk    = not i_useVol or volSpike
 
-// ************************************************************************************
-// Calculate if the RSI is high or low
-// Modified version of rsi function from https://zenandtheartoftrading.com/pinescript/generate-trading-signals-with-rsi/
-// Config ---------------------------------------
+// RSI gate helpers
+bullRSI = not i_useRSI or isrsios or isrsios[1]
+bearRSI = not i_useRSI or isrsiob or isrsiob[1]
 
+// ==================================================================================
+// Bearish Patterns
+// ==================================================================================
 
-rsisrc = close
-rsilen = 14
-rsiob = 60
-rsios = 50
-rsihighclr = #F90404FF
-rsilowclr = #04F909FF
+// --- Single candle (bear) ---
+shooting_star       = body[1] > 0 and longcandle[1] and high > high[1] and shadowtop > 2 * abody and shadowbottom < 0.3 * abody
+shooting_star_doji  = close[1] > open[1] and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.7 and math.abs(close - open) / candleRange < 0.1 and close[1] < close and close[1] < open and (high - math.max(close, open)) > (3 * math.abs(close - open)) and (math.min(close, open) - low) > (3 * math.abs(close - open))
+the_hanging_man     = close < open and 0.3 > math.abs(close - open) / candleRange and math.abs(close - open) / candleRange >= 0.1 and (math.min(close, open) - low) >= (2 * math.abs(close - open)) and (high - math.max(close, open)) > (0.25 * math.abs(close - open))
+gravestone_doji_top = body[1] > 0 and longcandle[1] and high > high[1] and shadowtop > 3 * abody and shadowbottom < shadowtop / 3
+dragonfly_doji_top  = body[1] > 0 and longcandle[1] and high > high[1] and shadowbottom > 3 * abody and shadowtop < shadowbottom / 3
 
-// Action --------------------------------------
-rsival = rsi(rsisrc, rsilen)
-isrsiob = (rsival >= rsiob)
-isrsios = (rsival <= rsios)
-bullengulf = close > open[1] and close[1] < open[1]
-bearengulf = close < open[1] and close[1] > open[1]
+// --- Double candle (bear) ---
+evening_star        = close[2] > open[2] and math.abs(close[2] - open[2]) / (high[2] - low[2]) >= 0.7 and 0.3 > math.abs(close[1] - open[1]) / (high[1] - low[1]) and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.1 and close < open and math.abs(close - open) / candleRange >= 0.7 and close[2] < close[1] and close[2] < open[1] and close[1] > open and open[1] > open and close < close[2]
+evening_star_doji   = close[2] > open[2] and math.abs(close[2] - open[2]) / (high[2] - low[2]) >= 0.7 and math.abs(close[1] - open[1]) / (high[1] - low[1]) < 0.1 and close < open and math.abs(close - open) / candleRange >= 0.7 and close[2] < close[1] and close[2] < open[1] and close[1] > open and open[1] > open and close < close[2] and (high[1] - math.max(close[1], open[1])) > (3 * math.abs(close[1] - open[1])) and (math.min(close[1], open[1]) - low[1]) > (3 * math.abs(close[1] - open[1]))
+dark_cloud_cover    = close[1] > open[1] and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.7 and close < open and math.abs(close - open) / candleRange >= 0.7 and open >= close[1] and close > open[1] and close < ((open[1] + close[1]) / 2)
+bearish_engulfing   = close[1] > open[1] and 0.3 > math.abs(close[1] - open[1]) / (high[1] - low[1]) and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.1 and close < open and math.abs(close - open) / candleRange >= 0.7 and high[1] < open and low[1] > close
+bearish_engulfing_doji = math.abs(close[1] - open[1]) / (high[1] - low[1]) < 0.1 and close > open and math.abs(close - open) / candleRange >= 0.7 and high[1] < close and low[1] > open and (high[1] - math.max(close[1], open[1])) > (3 * math.abs(close[1] - open[1])) and (math.min(close[1], open[1]) - low[1]) <= math.abs(close[1] - open[1])
+bearish_harami      = body[1] > 0 and body < 0 and longcandle[1] and bodybottom > bodybottom[1] and bodytop < bodytop[1]
+bearish_harami_cross = body[1] > 0 and longcandle[1] and bodybottom > bodybottom[1] and bodytop < bodytop[1] and ratio < 0.3 and candleRange < 0.3 * candleRange[1]
+last_engulfing_top  = body[1] < 0 and body > 0 and bodybottom < bodybottom[1] and bodytop > bodytop[1] and longcandle
+descending_hawk     = body[1] > 0 and body > 0 and longcandle[1] and bodybottom > bodybottom[1] and bodytop < bodytop[1]
+two_crows           = body[2] > 0 and body[1] < 0 and body < 0 and longcandle[2] and open[1] > close[2] and close[1] > close[2] and open < bodytop[1] and open > bodybottom[1] and close < bodytop[2] and close > bodybottom[2]
 
-rsisignal = ((isrsios or isrsios[1]) and bullish_engulfing) or 
-    ((isrsios or isrsios[1]) and last_engulfing_bottom) or 
-    ((isrsios or isrsios[1]) and bullish_breakaway) or 
-    ((isrsios or isrsios[1]) and three_stars_in_the_south) or 
-    ((isrsios or isrsios[1]) and three_white_soldiers) or 
-    ((isrsios or isrsios[1]) and bullish_harami_cross) or 
-    ((isrsios or isrsios[1]) and bullish_engulfing_doji) or 
-    ((isrsios or isrsios[1]) and bullish_harami) or 
-    ((isrsios or isrsios[1]) and piercing_line) or 
-    ((isrsios or isrsios[1]) and inverted_hammer) or 
-    ((isrsios or isrsios[1]) and morning_star_doji) or 
-    ((isrsios or isrsios[1]) and morning_star) or 
-    ((isrsios or isrsios[1]) and bullish_mat_hold) or
-    ((isrsios or isrsios[1]) and rising_three_methods) or
-    ((isrsios or isrsios[1]) and bullish_three_line_strike) or
-    ((isrsios or isrsios[1]) and hammer) or
-    ((isrsios or isrsios[1]) and concealing_baby_swallow) or
-    ((isrsios or isrsios[1]) and dragonfly_doji_bottom) or
-    ((isrsios or isrsios[1]) and homing_pigeon) or
-    ((isrsios or isrsios[1]) and three_outside_up) or
-    ((isrsios or isrsios[1]) and three_inside_up) or
-    ((isrsios or isrsios[1]) and abandoned_baby_bottom) or
-    ((isrsiob or isrsiob[1]) and bearish_engulfing) or 
-    ((isrsiob or isrsiob[1]) and bearish_engulfing_doji) or 
-    ((isrsiob or isrsiob[1]) and bearish_harami) or 
-    ((isrsiob or isrsiob[1]) and the_hanging_man) or 
-    ((isrsiob or isrsiob[1]) and falling_three_methods) or 
-    ((isrsiob or isrsiob[1]) and last_engulfing_top) or 
-    ((isrsiob or isrsiob[1]) and bearish_three_line_strike) or 
-    ((isrsiob or isrsiob[1]) and three_inside_down) or 
-    ((isrsiob or isrsiob[1]) and gravesstone_doji_top) or 
-    ((isrsiob or isrsiob[1]) and dark_cloud_cover) or 
-    ((isrsiob or isrsiob[1]) and shooting_star) or 
-    ((isrsiob or isrsiob[1]) and shooting_star_doji) or 
-    ((isrsiob or isrsiob[1]) and bearish_harami_cross) or 
-    ((isrsiob or isrsiob[1]) and evening_star) or 
-    ((isrsiob or isrsiob[1]) and abandoned_baby_top) or
-    ((isrsiob or isrsiob[1]) and descending_hawk) or
-    ((isrsiob or isrsiob[1]) and three_outside_down) or
-    ((isrsiob or isrsiob[1]) and three_black_crows) or
-    ((isrsiob or isrsiob[1]) and upside_gap_two_crows) or
-    ((isrsiob or isrsiob[1]) and dragonfly_doji_top) or
-    ((isrsiob or isrsiob[1]) and advance_block) or
-    ((isrsiob or isrsiob[1]) and bearish_breakaway) or
-    ((isrsiob or isrsiob[1]) and two_crows) or
-    ((isrsiob or isrsiob[1]) and evening_star_doji)
-// plot bullish signals
-plotshape(rsisignal and bullish_engulfing, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and bullish_engulfing_doji, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and bullish_harami, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and piercing_line, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and inverted_hammer, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and morning_star, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and morning_star_doji, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and bullish_harami_cross, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and three_white_soldiers, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and bullish_breakaway, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and three_stars_in_the_south, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-plotshape(rsisignal and last_engulfing_bottom, style=shape.triangleup, color = rsilowclr, size=size.tiny, location=location.belowbar)
-// plot bearish signals.
-plotshape(rsisignal and gravesstone_doji_top, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and bearish_three_line_strike, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and last_engulfing_top, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and three_inside_down, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and bearish_harami_cross, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and falling_three_methods, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and bearish_engulfing, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and bearish_engulfing_doji, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and bearish_harami, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and the_hanging_man, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and dark_cloud_cover, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and shooting_star, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and shooting_star_doji, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and evening_star, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
-plotshape(rsisignal and evening_star_doji, style=shape.triangledown, color = rsihighclr, size=size.tiny, location=location.abovebar)
+// --- Triple candle (bear) ---
+three_inside_down   = body[2] > 0 and body[1] < 0 and body < 0 and bearish_harami[1] and close < close[1]
+three_outside_down  = body[2] > 0 and body[1] < 0 and body < 0 and bearish_engulfing[1] and close < close[1]
+three_black_crows   = body[2] < 0 and body[1] < 0 and body < 0 and longcandle[2] and longcandle[1] and longcandle and low[1] < low[2] and low < low[1] and close[1] < close[2] and close < close[1] and open[1] < open[2] and open[1] > close[2] and open < open[1] and open > close[1]
+upside_gap_two_crows = body[2] > 0 and body[1] < 0 and body < 0 and longcandle[2] and open[1] > close[2] and bodytop > bodytop[1] and bodybottom < bodybottom[1] and close > close[2]
+abandoned_baby_top  = body[2] > 0 and body < 0 and longcandle[2] and ratio[1] < 0.3 and low[1] > high[2] and low[1] > high
+advance_block       = body[2] > 0 and body[1] > 0 and body > 0 and high[2] < high[1] and high[1] < high and open[1] > bodybottom[2] and open[1] < bodytop[2] and open > bodybottom[1] and open < bodytop[1] and abody[1] < abody[2] and abody < abody[1]
+
+// --- Multi candle (bear) ---
+falling_three_methods = body[4] < 0 and body[3] > 0 and body[1] > 0 and body < 0 and longcandle[4] and longcandle and close[2] > close[3] and close[1] > close[2] and low[2] > low[3] and low[1] > low[2] and high[1] < high[4] and open < close[1] and close < low[4] and close < low[3] and close < low[2] and close < low[1]
+bearish_three_line_strike = body[3] < 0 and body[2] < 0 and body[1] < 0 and body > 0 and longcandle[3] and longcandle[2] and longcandle[1] and close[2] < close[3] and close[1] < close[2] and open < close[1] and close > open[3]
+bearish_breakaway   = body[4] > 0 and body[3] > 0 and body < 0 and open[3] > close[4] and close[2] > close[3] and close[1] > close[2] and longcandle and close > close[4] and close < open[3]
+
+// ==================================================================================
+// Bullish Patterns
+// ==================================================================================
+
+// --- Single candle (bull) ---
+hammer              = body[1] < 0 and longcandle[1] and low < low[1] and shadowbottom > 2 * abody and shadowtop < 0.3 * abody
+inverted_hammer     = body[1] < 0 and longcandle[1] and low < low[1] and shadowtop > 2 * abody and shadowbottom < 0.3 * abody
+dragonfly_doji_bottom = body[1] < 0 and longcandle[1] and low < low[1] and shadowbottom > 3 * abody and shadowtop < shadowbottom / 3
+
+// --- Double candle (bull) ---
+morning_star        = close[2] < open[2] and math.abs(close[2] - open[2]) / (high[2] - low[2]) >= 0.7 and 0.3 > math.abs(close[1] - open[1]) / (high[1] - low[1]) and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.1 and close > open and math.abs(close - open) / candleRange >= 0.7 and close[2] > close[1] and close[2] > open[1] and close[1] < open and open[1] < open and close > close[2]
+morning_star_doji   = close[2] < open[2] and math.abs(close[2] - open[2]) / (high[2] - low[2]) >= 0.7 and math.abs(close[1] - open[1]) / (high[1] - low[1]) < 0.1 and close > open and math.abs(close - open) / candleRange >= 0.7 and close[2] > close[1] and close[2] > open[1] and close[1] < open and open[1] < open and close > close[2] and (high[1] - math.max(close[1], open[1])) > (3 * math.abs(close[1] - open[1])) and (math.min(close[1], open[1]) - low[1]) > (3 * math.abs(close[1] - open[1]))
+piercing_line       = close[1] < open[1] and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.7 and close > open and math.abs(close - open) / candleRange >= 0.7 and open <= close[1] and close < open[1] and close < ((open[1] + close[1]) / 2)
+bullish_harami      = close[1] < open[1] and math.abs(close[1] - open[1]) / (high[1] - low[1]) >= 0.7 and 0.3 > math.abs(close - open) / candleRange and math.abs(close - open) / candleRange >= 0.1 and high < open[1] and low > close[1]
+bullish_engulfing   = body[1] < 0 and body > 0 and bodybottom < bodybottom[1] and bodytop > bodytop[1] and longcandle
+bullish_engulfing_doji = math.abs(close[1] - open[1]) / (high[1] - low[1]) < 0.1 and close > open and math.abs(close - open) / candleRange >= 0.7 and high[1] < close and low[1] > open and (high[1] - math.max(close[1], open[1])) > (3 * math.abs(close[1] - open[1])) and (math.min(close[1], open[1]) - low[1]) <= math.abs(close[1] - open[1])
+bullish_harami_cross = body[1] < 0 and longcandle[1] and bodybottom > bodybottom[1] and bodytop < bodytop[1] and ratio < 0.3 and candleRange < 0.3 * candleRange[1]
+last_engulfing_bottom = body[1] > 0 and body < 0 and bodybottom < bodybottom[1] and bodytop > bodytop[1] and longcandle
+homing_pigeon       = body[1] < 0 and body < 0 and longcandle[1] and bodybottom > bodybottom[1] and bodytop < bodytop[1]
+
+// --- Triple candle (bull) ---
+three_white_soldiers = body[2] > 0 and body[1] > 0 and body > 0 and high[1] > high[2] and high > high[1] and close[1] > close[2] and close > close[1] and open[1] > open[2] and open[1] < close[2] and open > open[1] and open < close[1]
+three_inside_up     = body[2] < 0 and body[1] > 0 and body > 0 and bullish_harami[1] and close > close[1]
+three_outside_up    = body[2] < 0 and body[1] > 0 and body > 0 and bullish_engulfing[1] and close > close[1]
+three_stars_in_south = body[2] < 0 and body[1] < 0 and body < 0 and shadowtop[2] < candleRange[2] / 4 and shadowbottom[2] > abody[2] / 2 and low[1] > low[2] and high[1] < high[2] and abody[1] < abody[2] and shadowtop[1] < candleRange[1] / 4 and shadowbottom[1] > abody[1] / 2 and low > low[1] and high < high[1] and abody < abody[1] and shadowtop < candleRange / 4 and shadowbottom < candleRange / 4
+abandoned_baby_bottom = body[2] < 0 and body > 0 and longcandle[2] and ratio[1] < 0.3 and high[1] < low[2] and high[1] < low
+
+// --- Multi candle (bull) ---
+rising_three_methods = body[4] > 0 and body[3] < 0 and body[1] < 0 and body > 0 and longcandle[4] and longcandle and close[2] < close[3] and close[1] < close[2] and high[2] < high[3] and high[1] < high[2] and low[1] > low[4] and open > close[1] and close > high[4] and close > high[3] and close > high[2] and close > high[1]
+bullish_mat_hold    = body[4] > 0 and body[3] < 0 and body[1] < 0 and body > 0 and longcandle[4] and close[3] > close[4] and close[2] < close[3] and close[1] < close[2] and high[2] < high[3] and high[1] < high[2] and low[1] > low[4] and open > close[1] and close > high[4] and close > high[3] and close > high[2] and close > high[1]
+bullish_three_line_strike = body[3] > 0 and body[2] > 0 and body[1] > 0 and body < 0 and longcandle[3] and longcandle[2] and longcandle[1] and close[2] > close[3] and close[1] > close[2] and open > close[1] and close < open[3]
+bullish_breakaway   = body[4] < 0 and body[3] < 0 and body > 0 and open[3] < close[4] and close[2] < close[3] and close[1] < close[2] and longcandle and close < close[4] and close > open[3]
+concealing_baby_swallow = body[3] < 0 and body[2] < 0 and body[1] < 0 and body < 0 and ratio[3] > 0.8 and ratio[2] > 0.8 and ratio > 0.8 and open[1] < close[2] and high[1] > close[2] and shadowtop[1] > 0.6 * (abody[1] + shadowbottom[1]) and bodybottom < bodybottom[1] and bodytop > high[1]
+
+// ==================================================================================
+// Aggregate Signals
+// ==================================================================================
+
+// Bull aggregates by reliability
+highRelBull = (bullRSI and volOk) and (three_white_soldiers or morning_star or morning_star_doji or bullish_engulfing or three_outside_up or abandoned_baby_bottom)
+medRelBull  = (bullRSI and volOk) and (piercing_line or bullish_harami or bullish_harami_cross or rising_three_methods or bullish_mat_hold or bullish_three_line_strike or three_inside_up or bullish_breakaway or homing_pigeon or last_engulfing_bottom or three_stars_in_south or bullish_engulfing_doji)
+lowRelBull  = (bullRSI and volOk) and (hammer or inverted_hammer or dragonfly_doji_bottom or concealing_baby_swallow)
+
+// Bear aggregates by reliability
+highRelBear = (bearRSI and volOk) and (three_black_crows or evening_star or evening_star_doji or bearish_engulfing or three_outside_down or abandoned_baby_top)
+medRelBear  = (bearRSI and volOk) and (dark_cloud_cover or bearish_harami or bearish_harami_cross or falling_three_methods or bearish_three_line_strike or three_inside_down or bearish_breakaway or last_engulfing_top or descending_hawk or two_crows or upside_gap_two_crows or advance_block or bearish_engulfing_doji)
+lowRelBear  = (bearRSI and volOk) and (shooting_star or shooting_star_doji or the_hanging_man or gravestone_doji_top or dragonfly_doji_top)
+
+anyBull = highRelBull or medRelBull or lowRelBull
+anyBear = highRelBear or medRelBear or lowRelBear
+
+// ==================================================================================
+// Plot Signals — Individual plotshape with pattern text and reliability color/size
+// ==================================================================================
+
+// --- BULLISH: High Reliability (Triple+) ---
+plotshape(i_showTriple and bullRSI and volOk and three_white_soldiers,  style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="3WS",   textcolor=bullHighClr, size=size.small, title="Three White Soldiers")
+plotshape(i_showTriple and bullRSI and volOk and morning_star,         style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="MStar",  textcolor=bullHighClr, size=size.small, title="Morning Star")
+plotshape(i_showTriple and bullRSI and volOk and morning_star_doji,    style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="MSDoji", textcolor=bullHighClr, size=size.small, title="Morning Star Doji")
+plotshape(i_showDouble and bullRSI and volOk and bullish_engulfing,    style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="Eng",    textcolor=bullHighClr, size=size.small, title="Bullish Engulfing")
+plotshape(i_showTriple and bullRSI and volOk and three_outside_up,     style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="3OU",    textcolor=bullHighClr, size=size.small, title="Three Outside Up")
+plotshape(i_showTriple and bullRSI and volOk and abandoned_baby_bottom,style=shape.triangleup, location=location.belowbar, color=bullHighClr, text="ABaby",  textcolor=bullHighClr, size=size.small, title="Abandoned Baby Bottom")
+
+// --- BULLISH: Medium Reliability ---
+plotshape(i_showDouble and bullRSI and volOk and piercing_line,        style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Pierce", textcolor=bullMedClr, size=size.tiny, title="Piercing Line")
+plotshape(i_showDouble and bullRSI and volOk and bullish_harami,       style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Harami", textcolor=bullMedClr, size=size.tiny, title="Bullish Harami")
+plotshape(i_showDouble and bullRSI and volOk and bullish_harami_cross, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="HCross", textcolor=bullMedClr, size=size.tiny, title="Bullish Harami Cross")
+plotshape(i_showDouble and bullRSI and volOk and bullish_engulfing_doji,style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="EDoji", textcolor=bullMedClr, size=size.tiny, title="Bullish Engulfing Doji")
+plotshape(i_showMulti  and bullRSI and volOk and rising_three_methods, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="R3M",   textcolor=bullMedClr, size=size.tiny, title="Rising Three Methods")
+plotshape(i_showMulti  and bullRSI and volOk and bullish_mat_hold,     style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="MatH",  textcolor=bullMedClr, size=size.tiny, title="Bullish Mat Hold")
+plotshape(i_showMulti  and bullRSI and volOk and bullish_three_line_strike, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3LS", textcolor=bullMedClr, size=size.tiny, title="Bullish Three Line Strike")
+plotshape(i_showTriple and bullRSI and volOk and three_inside_up,      style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3IU",   textcolor=bullMedClr, size=size.tiny, title="Three Inside Up")
+plotshape(i_showMulti  and bullRSI and volOk and bullish_breakaway,    style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="Brkwy", textcolor=bullMedClr, size=size.tiny, title="Bullish Breakaway")
+plotshape(i_showTriple and bullRSI and volOk and three_stars_in_south, style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="3SS",   textcolor=bullMedClr, size=size.tiny, title="Three Stars in South")
+plotshape(i_showDouble and bullRSI and volOk and last_engulfing_bottom,style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="LEB",   textcolor=bullMedClr, size=size.tiny, title="Last Engulfing Bottom")
+plotshape(i_showDouble and bullRSI and volOk and homing_pigeon,        style=shape.triangleup, location=location.belowbar, color=bullMedClr, text="HPig",  textcolor=bullMedClr, size=size.tiny, title="Homing Pigeon")
+
+// --- BULLISH: Low Reliability (Single candle) ---
+plotshape(i_showSingle and bullRSI and volOk and hammer,               style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="Ham",   textcolor=bullLowClr, size=size.tiny, title="Hammer")
+plotshape(i_showSingle and bullRSI and volOk and inverted_hammer,      style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="IHam",  textcolor=bullLowClr, size=size.tiny, title="Inverted Hammer")
+plotshape(i_showSingle and bullRSI and volOk and dragonfly_doji_bottom,style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="DFly",  textcolor=bullLowClr, size=size.tiny, title="Dragonfly Doji Bottom")
+plotshape(i_showMulti  and bullRSI and volOk and concealing_baby_swallow, style=shape.triangleup, location=location.belowbar, color=bullLowClr, text="CBS", textcolor=bullLowClr, size=size.tiny, title="Concealing Baby Swallow")
+
+// --- BEARISH: High Reliability (Triple+) ---
+plotshape(i_showTriple and bearRSI and volOk and three_black_crows,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="3BC",   textcolor=bearHighClr, size=size.small, title="Three Black Crows")
+plotshape(i_showTriple and bearRSI and volOk and evening_star,         style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="EStar",  textcolor=bearHighClr, size=size.small, title="Evening Star")
+plotshape(i_showTriple and bearRSI and volOk and evening_star_doji,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="ESDoji", textcolor=bearHighClr, size=size.small, title="Evening Star Doji")
+plotshape(i_showDouble and bearRSI and volOk and bearish_engulfing,    style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="Eng",    textcolor=bearHighClr, size=size.small, title="Bearish Engulfing")
+plotshape(i_showTriple and bearRSI and volOk and three_outside_down,   style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="3OD",    textcolor=bearHighClr, size=size.small, title="Three Outside Down")
+plotshape(i_showTriple and bearRSI and volOk and abandoned_baby_top,   style=shape.triangledown, location=location.abovebar, color=bearHighClr, text="ABaby",  textcolor=bearHighClr, size=size.small, title="Abandoned Baby Top")
+
+// --- BEARISH: Medium Reliability ---
+plotshape(i_showDouble and bearRSI and volOk and dark_cloud_cover,     style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="DCC",   textcolor=bearMedClr, size=size.tiny, title="Dark Cloud Cover")
+plotshape(i_showDouble and bearRSI and volOk and bearish_harami,       style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="Harami", textcolor=bearMedClr, size=size.tiny, title="Bearish Harami")
+plotshape(i_showDouble and bearRSI and volOk and bearish_harami_cross, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="HCross", textcolor=bearMedClr, size=size.tiny, title="Bearish Harami Cross")
+plotshape(i_showDouble and bearRSI and volOk and bearish_engulfing_doji,style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="EDoji", textcolor=bearMedClr, size=size.tiny, title="Bearish Engulfing Doji")
+plotshape(i_showMulti  and bearRSI and volOk and falling_three_methods,style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="F3M",   textcolor=bearMedClr, size=size.tiny, title="Falling Three Methods")
+plotshape(i_showMulti  and bearRSI and volOk and bearish_three_line_strike, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="3LS", textcolor=bearMedClr, size=size.tiny, title="Bearish Three Line Strike")
+plotshape(i_showTriple and bearRSI and volOk and three_inside_down,    style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="3ID",   textcolor=bearMedClr, size=size.tiny, title="Three Inside Down")
+plotshape(i_showDouble and bearRSI and volOk and last_engulfing_top,   style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="LET",   textcolor=bearMedClr, size=size.tiny, title="Last Engulfing Top")
+plotshape(i_showMulti  and bearRSI and volOk and bearish_breakaway,    style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="Brkwy", textcolor=bearMedClr, size=size.tiny, title="Bearish Breakaway")
+plotshape(i_showDouble and bearRSI and volOk and descending_hawk,      style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="DHawk", textcolor=bearMedClr, size=size.tiny, title="Descending Hawk")
+plotshape(i_showTriple and bearRSI and volOk and upside_gap_two_crows, style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="UG2C",  textcolor=bearMedClr, size=size.tiny, title="Upside Gap Two Crows")
+plotshape(i_showTriple and bearRSI and volOk and advance_block,        style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="AdvB",  textcolor=bearMedClr, size=size.tiny, title="Advance Block")
+plotshape(i_showDouble and bearRSI and volOk and two_crows,            style=shape.triangledown, location=location.abovebar, color=bearMedClr, text="2Crow", textcolor=bearMedClr, size=size.tiny, title="Two Crows")
+
+// --- BEARISH: Low Reliability (Single candle) ---
+plotshape(i_showSingle and bearRSI and volOk and shooting_star,        style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="SStar", textcolor=bearLowClr, size=size.tiny, title="Shooting Star")
+plotshape(i_showSingle and bearRSI and volOk and shooting_star_doji,   style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="SSDoji",textcolor=bearLowClr, size=size.tiny, title="Shooting Star Doji")
+plotshape(i_showSingle and bearRSI and volOk and the_hanging_man,      style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="Hang",  textcolor=bearLowClr, size=size.tiny, title="Hanging Man")
+plotshape(i_showSingle and bearRSI and volOk and gravestone_doji_top,  style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="GStone",textcolor=bearLowClr, size=size.tiny, title="Gravestone Doji Top")
+plotshape(i_showSingle and bearRSI and volOk and dragonfly_doji_top,   style=shape.triangledown, location=location.abovebar, color=bearLowClr, text="DFly",  textcolor=bearLowClr, size=size.tiny, title="Dragonfly Doji Top")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(anyBull,                "Any Bullish Pattern",          "Bullish candlestick pattern detected (RSI-filtered)")
+alertcondition(anyBear,                "Any Bearish Pattern",          "Bearish candlestick pattern detected (RSI-filtered)")
+alertcondition(anyBull and volSpike,   "Volume-Confirmed Bullish",     "Bullish pattern with volume spike confirmation")
+alertcondition(anyBear and volSpike,   "Volume-Confirmed Bearish",     "Bearish pattern with volume spike confirmation")
+alertcondition(highRelBull,            "High-Reliability Bullish",     "Strong bullish pattern (3WS, MStar, Engulfing, 3OU)")
+alertcondition(highRelBear,            "High-Reliability Bearish",     "Strong bearish pattern (3BC, EStar, Engulfing, 3OD)")
