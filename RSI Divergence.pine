@@ -1,23 +1,88 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
 
-//@version=5
-indicator(title='RSI Divergence', shorttitle='RSI Divergence')
-rsi_src_fast = close
-rsi_fast_len = input.int(5, minval=1, title='Length Fast RSI')
-rsisrc = close
-rsilen = input.int(14, minval=1, title='Length Slow RSI')
-rsi_up_fast = ta.rma(math.max(ta.change(rsi_src_fast), 0), rsi_fast_len)
-rsi_down_fast = ta.rma(-math.min(ta.change(rsi_src_fast), 0), rsi_fast_len)
-rsi_fast = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - 100 / (1 + rsi_up_fast / rsi_down_fast)
-rsi_up_slow = ta.rma(math.max(ta.change(rsisrc), 0), rsilen)
-rsi_down_slow = ta.rma(-math.min(ta.change(rsisrc), 0), rsilen)
-rsi_slow = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - 100 / (1 + rsi_up_slow / rsi_down_slow)
-//plotfast = plot(rsi_fast, color=blue)
-//plotslow = plot(rsi_slow, color=orange)
-divergence = rsi_fast - rsi_slow
-//plotdiv = plot(divergence, color = divergence > 0 ? lime:red, linewidth = 2)
-//band1 = hline(70,color=green)
-//band0 = hline(30,color=red)
-band = hline(0)
+//@version=6
+indicator(title='RSI Divergence', shorttitle='RSI Div')
 
+// ==================== RSI Settings ====================
+var rsi_group = "RSI Settings"
+rsi_fast_src = input.source(close, "Fast RSI Source", group=rsi_group)
+rsi_fast_len = input.int(5, "Fast RSI Length", minval=1, group=rsi_group)
+rsi_slow_src = input.source(close, "Slow RSI Source", group=rsi_group)
+rsi_slow_len = input.int(14, "Slow RSI Length", minval=1, group=rsi_group)
+
+// ==================== Display Settings ====================
+var disp_group = "Display Settings"
+i_showFast     = input.bool(false, "Show Fast RSI Line", group=disp_group)
+i_showSlow     = input.bool(false, "Show Slow RSI Line", group=disp_group)
+i_showSignals  = input.bool(true, "Show Divergence Shift Signals", group=disp_group)
+bullDivClr     = input.color(color.rgb(0, 238, 71), "Bullish Divergence Color", group=disp_group)
+bearDivClr     = input.color(color.rgb(255, 8, 0), "Bearish Divergence Color", group=disp_group)
+
+// ==================================================================================
+// RSI Calculations (manual for fast/slow independence)
+// ==================================================================================
+rsi_up_fast   = ta.rma(math.max(ta.change(rsi_fast_src), 0), rsi_fast_len)
+rsi_down_fast = ta.rma(-math.min(ta.change(rsi_fast_src), 0), rsi_fast_len)
+rsi_fast      = rsi_down_fast == 0 ? 100 : rsi_up_fast == 0 ? 0 : 100 - 100 / (1 + rsi_up_fast / rsi_down_fast)
+
+rsi_up_slow   = ta.rma(math.max(ta.change(rsi_slow_src), 0), rsi_slow_len)
+rsi_down_slow = ta.rma(-math.min(ta.change(rsi_slow_src), 0), rsi_slow_len)
+rsi_slow      = rsi_down_slow == 0 ? 100 : rsi_up_slow == 0 ? 0 : 100 - 100 / (1 + rsi_up_slow / rsi_down_slow)
+
+// Divergence: fast RSI minus slow RSI
+divergence = rsi_fast - rsi_slow
+isBullish  = divergence > 0
+isBearish  = divergence < 0
+
+// Shift detection — first bar where divergence changes sign
+bullShift = ta.crossover(divergence, 0)
+bearShift = ta.crossunder(divergence, 0)
+
+// Momentum — is divergence getting stronger or weaker
+divAccel     = ta.change(divergence)
+growingBull  = isBullish and divAccel > 0
+shrinkBull   = isBullish and divAccel <= 0
+growingBear  = isBearish and divAccel < 0
+shrinkBear   = isBearish and divAccel >= 0
+
+// 4-color histogram
+histColor = growingBull ? bullDivClr : shrinkBull ? color.new(bullDivClr, 50) : growingBear ? bearDivClr : color.new(bearDivClr, 50)
+
+// ==================================================================================
+// Grid Layout
+// ==================================================================================
+h70 = hline(70, "OB", color=color.new(color.red, 60), linestyle=hline.style_dashed)
+h30 = hline(30, "OS", color=color.new(color.green, 60), linestyle=hline.style_dashed)
+h50 = hline(50, "Mid", color=color.new(color.gray, 60), linestyle=hline.style_dotted)
+hZero = hline(0, "Zero", color=color.new(color.gray, 50), linestyle=hline.style_solid)
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+
+// Divergence histogram — the core visual
+plot(divergence, title='Divergence', linewidth=2, style=plot.style_columns, color=histColor, histbase=0)
+
+// Zero line emphasis
+plot(0, title="Zero Ref", color=color.new(color.white, 70), linewidth=1)
+
+// Optional fast/slow RSI lines
+plot(i_showFast ? rsi_fast : na, title='Fast RSI', linewidth=1, color=color.rgb(255, 152, 36))
+plot(i_showSlow ? rsi_slow : na, title='Slow RSI', linewidth=1, color=color.rgb(44, 29, 255))
+
+// Divergence shift signals
+plotshape(i_showSignals and bullShift, style=shape.triangleup,   location=location.bottom, color=bullDivClr, text="Bull", textcolor=bullDivClr, size=size.tiny, title="Bullish Shift")
+plotshape(i_showSignals and bearShift, style=shape.triangledown, location=location.top,    color=bearDivClr, text="Bear", textcolor=bearDivClr, size=size.tiny, title="Bearish Shift")
+
+// Background tint when divergence is strong
+bgcolor(math.abs(divergence) > 10 ? (isBullish ? color.new(bullDivClr, 92) : color.new(bearDivClr, 92)) : na, title="Strong Divergence BG")
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(bullShift,                    "Bullish Divergence Shift",  "Fast RSI crossed above slow RSI — bullish momentum shift")
+alertcondition(bearShift,                    "Bearish Divergence Shift",  "Fast RSI crossed below slow RSI — bearish momentum shift")
+alertcondition(growingBull,                  "Bullish Divergence Growing","Bullish divergence is accelerating")
+alertcondition(growingBear,                  "Bearish Divergence Growing","Bearish divergence is accelerating")
+alertcondition(math.abs(divergence) > 15,    "Extreme Divergence",       "RSI divergence exceeded 15 — strong momentum imbalance")
