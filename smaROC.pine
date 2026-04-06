@@ -1,0 +1,183 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=6
+indicator("SMA Rate of Change", shorttitle="SMA ROC", overlay=false, max_labels_count=500)
+
+// ==================================================================================
+// Settings
+// ==================================================================================
+string GRP1        = "Fast SMA ROC"
+int    i_smaLen1   = input.int(20,  "SMA Length",      minval=1, maxval=500,  group=GRP1)
+int    i_rocLen1   = input.int(9,   "ROC Period",      minval=1, maxval=200,  group=GRP1)
+int    i_smooth1   = input.int(1,   "Smoothing (SMA)", minval=1, maxval=100,  group=GRP1, tooltip="1 = no smoothing")
+color  i_colUp1    = input.color(color.rgb(0, 230, 118),  "Bull Color", group=GRP1)
+color  i_colDn1    = input.color(color.rgb(255, 82, 82),  "Bear Color", group=GRP1)
+
+string GRP2        = "Slow SMA ROC"
+bool   i_show2     = input.bool(true, "Show Slow",                           group=GRP2)
+int    i_smaLen2   = input.int(200, "SMA Length",      minval=1, maxval=1000, group=GRP2)
+int    i_rocLen2   = input.int(9,   "ROC Period",      minval=1, maxval=200,  group=GRP2)
+int    i_smooth2   = input.int(1,   "Smoothing (SMA)", minval=1, maxval=100,  group=GRP2, tooltip="1 = no smoothing")
+color  i_colUp2    = input.color(color.rgb(100, 181, 246), "Bull Color", group=GRP2)
+color  i_colDn2    = input.color(color.rgb(255, 167, 38),  "Bear Color", group=GRP2)
+
+string GRP3        = "Display"
+string i_scale     = input.string("Dollar", "Scale Mode", options=["Percent", "Dollar"], group=GRP3, tooltip="Percent = raw ROC %. Dollar = ROC scaled by price.")
+bool   i_showHist  = input.bool(true,  "Show Histogram (Fast)", group=GRP3)
+bool   i_showFills = input.bool(true,  "Show Fills",            group=GRP3)
+bool   i_showDash  = input.bool(true,  "Show Dashboard",        group=GRP3)
+bool   i_showZero  = input.bool(true,  "Show Zero-Line Crosses", group=GRP3)
+bool   i_showDiv   = input.bool(false, "Show Divergence Signals", group=GRP3)
+bool   i_showAccel = input.bool(true,  "Show Acceleration Coloring", group=GRP3)
+int    i_divLB     = input.int(5, "Divergence Lookback", minval=3, maxval=20, group=GRP3)
+
+// ==================================================================================
+// Calculations
+// ==================================================================================
+f_calc(_smaLen, _rocLen, _smoothLen) =>
+    float rocRaw = ta.roc(ta.sma(close, _smaLen), _rocLen)
+    float val    = i_scale == "Dollar" ? close * (rocRaw / 100.0) : rocRaw
+    float out    = _smoothLen > 1 ? ta.sma(val, _smoothLen) : val
+    [out, rocRaw]
+
+[val1, rocPct1] = f_calc(i_smaLen1, i_rocLen1, i_smooth1)
+[val2, rocPct2] = f_calc(i_smaLen2, i_rocLen2, i_smooth2)
+
+float slow = i_show2 ? val2 : na
+
+// Momentum direction
+bool fast_rising = not na(val1) and val1 > nz(val1[1])
+bool slow_rising = not na(slow) and slow > nz(slow[1])
+
+// Acceleration — rate of change of ROC (momentum of momentum)
+float accel1 = ta.change(val1)
+bool  accelUp1 = accel1 > 0
+bool  accelUp2 = not na(slow) and ta.change(slow) > 0
+
+// Cross signals
+bool crossUp   = i_show2 and ta.crossover(val1, slow)
+bool crossDn   = i_show2 and ta.crossunder(val1, slow)
+bool zeroCrossUp = ta.crossover(val1, 0)
+bool zeroCrossDn = ta.crossunder(val1, 0)
+
+// Divergence detection — price vs fast ROC
+bool priceHigher = high > ta.highest(high, i_divLB)[1]
+bool rocNotHigh  = val1 < ta.highest(val1, i_divLB)[1]
+bool bearDiv     = priceHigher and rocNotHigh and val1 > 0
+
+bool priceLower  = low < ta.lowest(low, i_divLB)[1]
+bool rocNotLow   = val1 > ta.lowest(val1, i_divLB)[1]
+bool bullDiv     = priceLower and rocNotLow and val1 < 0
+
+// ==================================================================================
+// Colors — 4-state histogram (growing/shrinking bull/bear)
+// ==================================================================================
+color c1 = val1 >= 0 ? i_colUp1 : i_colDn1
+color c2 = slow >= 0 ? i_colUp2 : i_colDn2
+
+// Acceleration-aware line colors
+color c1line = i_showAccel ? (val1 >= 0 ? (accelUp1 ? i_colUp1 : color.new(i_colUp1, 50)) : (accelUp1 ? color.new(i_colDn1, 50) : i_colDn1)) : (fast_rising ? i_colUp1 : i_colDn1)
+color c2line = slow_rising ? i_colUp2 : i_colDn2
+
+// 4-color histogram
+bool growBull   = val1 >= 0 and accelUp1
+bool shrinkBull = val1 >= 0 and not accelUp1
+bool growBear   = val1 < 0 and not accelUp1
+bool shrinkBear = val1 < 0 and accelUp1
+color histColor = growBull ? i_colUp1 : shrinkBull ? color.new(i_colUp1, 50) : growBear ? i_colDn1 : color.new(i_colDn1, 50)
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+hline(0, "Zero", color=color.new(color.gray, 60), linestyle=hline.style_dashed)
+
+// Histogram for fast (4-color momentum)
+plot(i_showHist ? val1 : na, "Fast Hist", style=plot.style_histogram, color=color.new(histColor, 40), linewidth=2)
+
+// Lines
+p1    = plot(val1, "Fast ROC", color=c1line, linewidth=2)
+p2    = plot(i_show2 ? slow : na, "Slow ROC", color=c2line, linewidth=2)
+pZero = plot(0.0, display=display.none)
+
+// Fills
+fill(p1, pZero, color=i_showFills ? color.new(c1, 88) : na, title="Fast/Zero Fill")
+fill(p1, p2,    color=i_showFills and i_show2 ? color.new(val1 > slow ? i_colUp1 : i_colDn1, 85) : na, title="Fast/Slow Fill")
+
+// Fast/Slow cross markers
+plotshape(crossUp ? val1 : na, "Cross Up",   shape.triangleup,   location.absolute, i_colUp1, size=size.small)
+plotshape(crossDn ? val1 : na, "Cross Down",  shape.triangledown, location.absolute, i_colDn1, size=size.small)
+
+// Zero-line crosses
+plotshape(i_showZero and zeroCrossUp, "Zero Cross Up",   shape.circle, location.absolute, color.new(i_colUp1, 20), size=size.tiny)
+plotshape(i_showZero and zeroCrossDn, "Zero Cross Down",  shape.circle, location.absolute, color.new(i_colDn1, 20), size=size.tiny)
+
+// Divergence signals
+bgcolor(i_showDiv and bearDiv ? color.new(color.orange, 88) : na, title="Bearish Divergence")
+bgcolor(i_showDiv and bullDiv ? color.new(color.teal, 88)   : na, title="Bullish Divergence")
+
+// ==================================================================================
+// Dashboard Table
+// ==================================================================================
+if barstate.islast and i_showDash
+    var table dash = table.new(position.top_right, 3, 8, bgcolor=color.rgb(20, 20, 30, 10), border_color=color.rgb(60, 60, 80), border_width=1, frame_color=color.rgb(60, 60, 80), frame_width=1)
+
+    string scaleLabel = i_scale == "Dollar" ? " $" : " %"
+    color  headerClr  = color.rgb(200, 200, 220)
+    color  labelClr   = color.rgb(160, 160, 180)
+
+    // Header
+    table.cell(dash, 0, 0, "SMA ROC",  text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 0, "Fast",     text_color=i_colUp1,  text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 0, "Slow",     text_color=i_colUp2,  text_size=size.small, text_halign=text.align_center)
+
+    // SMA Length
+    table.cell(dash, 0, 1, "SMA",      text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 1, str.tostring(i_smaLen1), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 1, i_show2 ? str.tostring(i_smaLen2) : "—", text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+
+    // ROC Period
+    table.cell(dash, 0, 2, "ROC",      text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, str.tostring(i_rocLen1), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 2, i_show2 ? str.tostring(i_rocLen2) : "—", text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+
+    // Current Value
+    table.cell(dash, 0, 3, "Value",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, str.tostring(val1, "#.##") + scaleLabel, text_color=c1line, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 3, i_show2 ? str.tostring(slow, "#.##") + scaleLabel : "—", text_color=c2line, text_size=size.small, text_halign=text.align_center)
+
+    // ROC %
+    table.cell(dash, 0, 4, "ROC %",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, str.tostring(rocPct1, "#.##") + " %", text_color=rocPct1 >= 0 ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 4, i_show2 ? str.tostring(rocPct2, "#.##") + " %" : "—", text_color=rocPct2 >= 0 ? i_colUp2 : i_colDn2, text_size=size.small, text_halign=text.align_center)
+
+    // Momentum
+    table.cell(dash, 0, 5, "Momentum", text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 5, fast_rising ? "Rising" : "Falling", text_color=fast_rising ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 5, i_show2 ? (slow_rising ? "Rising" : "Falling") : "—", text_color=slow_rising ? i_colUp2 : i_colDn2, text_size=size.small, text_halign=text.align_center)
+
+    // Acceleration
+    string accelTxt1 = accelUp1 ? "Accelerating" : "Decelerating"
+    string accelTxt2 = accelUp2 ? "Accelerating" : "Decelerating"
+    table.cell(dash, 0, 6, "Accel",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, accelTxt1,  text_color=accelUp1 ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 6, i_show2 ? accelTxt2 : "—", text_color=accelUp2 ? i_colUp2 : i_colDn2, text_size=size.small, text_halign=text.align_center)
+
+    // Bias
+    string biasText  = not i_show2 ? (val1 > 0 ? "Bullish" : "Bearish") : val1 > slow and val1 > 0 ? "Strong Bull" : val1 > slow and val1 <= 0 ? "Weak Bull" : val1 <= slow and val1 > 0 ? "Weak Bear" : "Strong Bear"
+    color  biasColor = not i_show2 ? (val1 > 0 ? i_colUp1 : i_colDn1) : val1 > slow ? i_colUp1 : i_colDn1
+    table.cell(dash, 0, 7, "Bias",     text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 7, biasText,   text_color=biasColor, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 7, "",         text_size=size.small)
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(crossUp,      "Fast Crossed Above Slow", "Fast SMA ROC crossed above slow SMA ROC — bullish momentum shift")
+alertcondition(crossDn,      "Fast Crossed Below Slow", "Fast SMA ROC crossed below slow SMA ROC — bearish momentum shift")
+alertcondition(zeroCrossUp,  "ROC Above Zero",          "Fast SMA ROC crossed above zero line — positive momentum")
+alertcondition(zeroCrossDn,  "ROC Below Zero",          "Fast SMA ROC crossed below zero line — negative momentum")
+alertcondition(bullDiv,      "Bullish Divergence",      "Price making new low but ROC is not — potential reversal")
+alertcondition(bearDiv,      "Bearish Divergence",      "Price making new high but ROC is not — potential reversal")
+alertcondition(growBull,     "Bull Accelerating",       "ROC positive and accelerating — strong bullish momentum")
+alertcondition(growBear,     "Bear Accelerating",       "ROC negative and accelerating — strong bearish momentum")
