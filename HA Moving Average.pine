@@ -1,0 +1,57 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=6
+indicator("HA Moving Average", shorttitle="HA MA", overlay=true)
+
+// ==================== Settings ====================
+var ma_group = "Moving Average"
+ma_length = input.int(20, "MA Length", minval=1, group=ma_group)
+ma_type   = input.string("EMA", "MA Type", options=["EMA", "SMA", "RMA", "WMA"], group=ma_group)
+ma_src    = input.string("Close", "HA Source", options=["Close", "Open", "HL2", "HLC3", "OHLC4"], group=ma_group, tooltip="Which Heikin Ashi price to feed the MA")
+
+var disp_group = "Display"
+i_showFill    = input.bool(true, "Show Price/MA Fill", group=disp_group)
+i_showSignals = input.bool(true, "Show Cross Signals", group=disp_group)
+i_lineWidth   = input.int(3, "Line Width", minval=1, maxval=5, group=disp_group)
+i_bullColor   = input.color(color.green, "Bullish Color", group=disp_group)
+i_bearColor   = input.color(color.red, "Bearish Color", group=disp_group)
+
+// ==================== Fetch Heikin Ashi Data ====================
+ha_ticker = ticker.heikinashi(syminfo.tickerid)
+ha_open   = request.security(ha_ticker, timeframe.period, open)
+ha_high   = request.security(ha_ticker, timeframe.period, high)
+ha_low    = request.security(ha_ticker, timeframe.period, low)
+ha_close  = request.security(ha_ticker, timeframe.period, close)
+
+// Select HA source
+ha_src = ma_src == "Open" ? ha_open : ma_src == "HL2" ? (ha_high + ha_low) / 2 : ma_src == "HLC3" ? (ha_high + ha_low + ha_close) / 3 : ma_src == "OHLC4" ? (ha_open + ha_high + ha_low + ha_close) / 4 : ha_close
+
+// ==================== Calculate MA from HA Data ====================
+ha_ma = ma_type == "SMA" ? ta.sma(ha_src, ma_length) : ma_type == "RMA" ? ta.rma(ha_src, ma_length) : ma_type == "WMA" ? ta.wma(ha_src, ma_length) : ta.ema(ha_src, ma_length)
+
+// Direction — MA slope
+ma_rising = ha_ma > ha_ma[1]
+ma_color  = ma_rising ? i_bullColor : i_bearColor
+
+// Price relationship
+priceAbove = close > ha_ma
+crossUp    = ta.crossover(close, ha_ma)
+crossDown  = ta.crossunder(close, ha_ma)
+
+// ==================== Plots ====================
+pMA    = plot(ha_ma, "HA MA", color=ma_color, linewidth=i_lineWidth)
+pClose = plot(close, display=display.none, title="Close")
+
+// Fill between price and MA
+fill(pMA, pClose, color=i_showFill ? (priceAbove ? color.new(i_bullColor, 90) : color.new(i_bearColor, 90)) : color(na), title="Price/MA Fill")
+
+// Cross signals
+plotshape(i_showSignals and crossUp,   style=shape.triangleup,   location=location.belowbar, color=i_bullColor, text="HA Cross", textcolor=i_bullColor, size=size.tiny, title="Cross Above HA MA")
+plotshape(i_showSignals and crossDown, style=shape.triangledown, location=location.abovebar, color=i_bearColor, text="HA Cross", textcolor=i_bearColor, size=size.tiny, title="Cross Below HA MA")
+
+// ==================== Alert Conditions ====================
+alertcondition(crossUp,   "Price Crossed Above HA MA", "Price crossed above Heikin Ashi moving average")
+alertcondition(crossDown, "Price Crossed Below HA MA", "Price crossed below Heikin Ashi moving average")
+alertcondition(ma_rising and not ma_rising[1], "HA MA Turned Bullish", "HA-based MA slope turned positive")
+alertcondition(not ma_rising and ma_rising[1], "HA MA Turned Bearish", "HA-based MA slope turned negative")
