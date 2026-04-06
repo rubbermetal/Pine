@@ -1,0 +1,304 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=6
+indicator("EMA Channel Reversal", shorttitle="EMA Ch Rev", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+// ==================================================================================
+// 1. INPUTS
+// ==================================================================================
+var ch_group = "200 EMA Channel"
+int    i_chanLen    = input.int(200, "Channel EMA Length", minval=10, group=ch_group)
+color  i_chanColor  = input.color(#708090, "Channel Color (Slate)", group=ch_group)
+
+var mom_group = "Momentum EMAs"
+int    i_fastLen    = input.int(5, "Fast EMA Length", minval=1, group=mom_group)
+int    i_slowLen    = input.int(8, "Slow EMA Length", minval=1, group=mom_group)
+color  i_fastColor  = input.color(#FFFFFF, "Fast EMA (White)", group=mom_group)
+color  i_slowColor  = input.color(#00FFAB, "Slow EMA (Mint)", group=mom_group)
+
+var entry_group = "Entry & Risk"
+string i_entryMode  = input.string("Crossover", "Entry Mode", options=["Crossover", "Price Action"], group=entry_group)
+float  i_rrRatio    = input.float(2.0, "Risk:Reward Ratio", minval=0.5, step=0.5, group=entry_group)
+
+var disp_group = "Display"
+bool   i_showHUD    = input.bool(true, "Show Status HUD", group=disp_group)
+bool   i_showRR     = input.bool(true, "Show R:R Overlay", group=disp_group)
+bool   i_showGlow   = input.bool(true, "Show Neon Glow on Momentum Lines", group=disp_group)
+
+// ==================================================================================
+// 2. COLOR PALETTE
+// ==================================================================================
+color C_SLATE      = i_chanColor       // #708090
+color C_WHITE      = i_fastColor       // #FFFFFF
+color C_MINT       = i_slowColor       // #00FFAB
+color C_GOLD       = #FFD700           // Pullback warning
+color C_SIG_GREEN  = #39FF14           // Bullish entry / TP
+color C_SIG_RED    = #FF3131           // Bearish entry / SL
+
+// ==================================================================================
+// 3. EMA CALCULATIONS
+// ==================================================================================
+
+// --- 200 EMA Channel ---
+emaHigh  = ta.ema(high, i_chanLen)
+emaClose = ta.ema(close, i_chanLen)
+emaLow   = ta.ema(low, i_chanLen)
+
+// --- Momentum Lines ---
+emaFast = ta.ema(close, i_fastLen)
+emaSlow = ta.ema(close, i_slowLen)
+
+// ==================================================================================
+// 4. STATE MACHINE (var-based persistence)
+// ==================================================================================
+var int   phase          = 0     // 0=idle, 1=breakout, 2=momentum, 3=pullback, 4=entry
+var int   bias           = 0     // 1=bull, -1=bear, 0=neutral
+var float prePullbackHi  = na    // Highest high before pullback (for Price Action mode)
+var float prePullbackLo  = na    // Lowest low before pullback
+var float entryPrice     = na
+var float slPrice        = na
+var float tpPrice        = na
+var bool  entryFired     = false
+
+// --- Phase 1: Directional Bias ---
+bool bullBreakout = close > emaHigh
+bool bearBreakout = close < emaLow
+bool inChannel    = close <= emaHigh and close >= emaLow
+
+// Reset bias if price re-enters channel
+if inChannel and phase < 3
+    bias  := 0
+    phase := 0
+
+if bullBreakout and bias != 1
+    bias  := 1
+    phase := 1
+    prePullbackHi := high
+    prePullbackLo := na
+    entryFired := false
+    entryPrice := na
+    slPrice := na
+    tpPrice := na
+
+if bearBreakout and bias != -1
+    bias  := -1
+    phase := 1
+    prePullbackLo := low
+    prePullbackHi := na
+    entryFired := false
+    entryPrice := na
+    slPrice := na
+    tpPrice := na
+
+// --- Phase 2: Momentum Confirmation ---
+bool momAlignedBull = emaFast > emaHigh and emaSlow > emaHigh
+bool momAlignedBear = emaFast < emaLow and emaSlow < emaLow
+
+if phase == 1 and bias == 1 and momAlignedBull
+    phase := 2
+if phase == 1 and bias == -1 and momAlignedBear
+    phase := 2
+
+// Track pre-pullback extremes during phase 2
+if phase == 2 and bias == 1
+    prePullbackHi := math.max(nz(prePullbackHi, high), high)
+if phase == 2 and bias == -1
+    prePullbackLo := math.min(nz(prePullbackLo, low), low)
+
+// --- Phase 3: Pullback Detection ---
+bool pullbackBull = bias == 1 and low <= emaHigh   // Price touches or enters channel from above
+bool pullbackBear = bias == -1 and high >= emaLow  // Price touches or enters channel from below
+
+if phase == 2 and pullbackBull
+    phase := 3
+if phase == 2 and pullbackBear
+    phase := 3
+
+// --- Phase 4: Entry Execution ---
+bool crossoverEntry = ta.crossover(emaFast, emaSlow)
+bool crossunderEntry = ta.crossunder(emaFast, emaSlow)
+bool priceActionLong = not na(prePullbackHi) and high > prePullbackHi
+bool priceActionShort = not na(prePullbackLo) and low < prePullbackLo
+
+bool longEntry  = false
+bool shortEntry = false
+
+if phase == 3 and bias == 1 and not entryFired
+    if i_entryMode == "Crossover" and crossoverEntry
+        longEntry := true
+    if i_entryMode == "Price Action" and priceActionLong
+        longEntry := true
+
+if phase == 3 and bias == -1 and not entryFired
+    if i_entryMode == "Crossover" and crossunderEntry
+        shortEntry := true
+    if i_entryMode == "Price Action" and priceActionShort
+        shortEntry := true
+
+// Calculate R:R on entry
+if longEntry
+    phase      := 4
+    entryFired := true
+    entryPrice := close
+    slPrice    := emaLow
+    float risk  = entryPrice - slPrice
+    tpPrice    := entryPrice + risk * i_rrRatio
+
+if shortEntry
+    phase      := 4
+    entryFired := true
+    entryPrice := close
+    slPrice    := emaHigh
+    float risk  = slPrice - entryPrice
+    tpPrice    := entryPrice - risk * i_rrRatio
+
+// Clear R:R overlay if SL or TP hit after entry
+if entryFired and not na(slPrice) and not na(tpPrice)
+    if bias == 1 and (low <= slPrice or high >= tpPrice)
+        entryPrice := na
+        slPrice    := na
+        tpPrice    := na
+        phase      := 0
+        bias       := 0
+    if bias == -1 and (high >= slPrice or low <= tpPrice)
+        entryPrice := na
+        slPrice    := na
+        tpPrice    := na
+        phase      := 0
+        bias       := 0
+
+// ==================================================================================
+// 5. CHANNEL PLOTS
+// ==================================================================================
+
+// Channel boundaries
+pHigh = plot(emaHigh, "200 EMA High", color=C_SLATE, linewidth=1)
+pLow  = plot(emaLow,  "200 EMA Low",  color=C_SLATE, linewidth=1)
+plot(emaClose, "200 EMA Close", color=color.new(C_SLATE, 50), linewidth=1, style=plot.style_line)
+
+// Dynamic channel fill — changes color with context
+chanFillColor = bias == 1 ? color.new(C_SIG_GREEN, 90) : bias == -1 ? color.new(C_SIG_RED, 90) : color.new(C_SLATE, 90)
+fill(pHigh, pLow, color=chanFillColor, title="Channel Fill")
+
+// ==================================================================================
+// 6. MOMENTUM RIBBON WITH NEON GLOW
+// ==================================================================================
+
+// Glow effect — wider transparent line behind the main line
+plot(i_showGlow ? emaFast : na, "Fast Glow", color=color.new(C_WHITE, 70), linewidth=5)
+plot(emaFast, "Fast EMA (5)", color=C_WHITE, linewidth=2)
+
+plot(i_showGlow ? emaSlow : na, "Slow Glow", color=color.new(C_MINT, 70), linewidth=5)
+plot(emaSlow, "Slow EMA (8)", color=C_MINT, linewidth=2)
+
+// ==================================================================================
+// 7. SIGNAL SHAPES
+// ==================================================================================
+
+// Phase 3 — Pullback diamond (gold, inside channel)
+bool showPullback = (phase == 3 or (phase[1] == 2 and phase == 3))
+pullbackY = bias == 1 ? emaClose : bias == -1 ? emaClose : na
+plotshape(showPullback and showPullback[0] and not showPullback[1], style=shape.diamond, location=location.absolute, color=C_GOLD, size=size.small, title="Pullback Diamond")
+
+// Phase 4 — Entry arrows
+plotshape(longEntry,  style=shape.triangleup,   location=location.belowbar, color=C_SIG_GREEN, text="LONG",  textcolor=C_SIG_GREEN, size=size.small, title="Long Entry")
+plotshape(shortEntry, style=shape.triangledown,  location=location.abovebar, color=C_SIG_RED,   text="SHORT", textcolor=C_SIG_RED,   size=size.small, title="Short Entry")
+
+// ==================================================================================
+// 8. RISK MANAGEMENT OVERLAY (R:R TOOL)
+// ==================================================================================
+var line  slLine    = na
+var line  tpLine    = na
+var line  entLine   = na
+var box   profitBox = na
+var box   lossBox   = na
+var label slLabel   = na
+var label tpLabel   = na
+
+// Clean previous
+line.delete(slLine)
+line.delete(tpLine)
+line.delete(entLine)
+box.delete(profitBox)
+box.delete(lossBox)
+label.delete(slLabel)
+label.delete(tpLabel)
+
+if i_showRR and entryFired and not na(entryPrice) and not na(slPrice) and not na(tpPrice)
+    int startBar = bar_index - 1
+    int endBar   = bar_index + 20
+
+    // Entry line
+    entLine := line.new(startBar, entryPrice, endBar, entryPrice, color=color.new(color.white, 50), width=1, style=line.style_dotted)
+
+    // SL line
+    slLine := line.new(startBar, slPrice, endBar, slPrice, color=C_SIG_RED, width=1, style=line.style_solid)
+
+    // TP line
+    tpLine := line.new(startBar, tpPrice, endBar, tpPrice, color=C_SIG_GREEN, width=1, style=line.style_solid)
+
+    // Profit zone box
+    if bias == 1
+        profitBox := box.new(startBar, tpPrice, endBar, entryPrice, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
+        lossBox   := box.new(startBar, entryPrice, endBar, slPrice, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
+    else
+        profitBox := box.new(startBar, entryPrice, endBar, tpPrice, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
+        lossBox   := box.new(startBar, slPrice, endBar, entryPrice, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
+
+    // Labels
+    slLabel := label.new(endBar + 2, slPrice, "SL", style=label.style_none, textcolor=C_SIG_RED, size=size.small)
+    tpLabel := label.new(endBar + 2, tpPrice, "TP", style=label.style_none, textcolor=C_SIG_GREEN, size=size.small)
+
+// ==================================================================================
+// 9. STATUS HUD (TOP-RIGHT DASHBOARD)
+// ==================================================================================
+var table hud = table.new(position.top_right, 2, 5, bgcolor=color.new(#000000, 60), border_width=1, border_color=color.new(color.gray, 60))
+
+if i_showHUD and barstate.islast
+    // Bias
+    string biasText  = bias == 1 ? "BULLISH" : bias == -1 ? "BEARISH" : "NEUTRAL"
+    color  biasColor = bias == 1 ? C_SIG_GREEN : bias == -1 ? C_SIG_RED : color.gray
+    table.cell(hud, 0, 0, "BIAS",     text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 0, biasText,   text_color=biasColor, text_size=size.small)
+
+    // Momentum alignment
+    bool aligned = (bias == 1 and momAlignedBull) or (bias == -1 and momAlignedBear)
+    string momText = aligned ? "ALIGNED" : "DISALIGNED"
+    color  momClr  = aligned ? C_SIG_GREEN : color.new(C_SIG_RED, 30)
+    table.cell(hud, 0, 1, "MOMENTUM", text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 1, momText,    text_color=momClr, text_size=size.small)
+
+    // Current phase with step indicator
+    string p1 = phase >= 1 ? "1.Breakout" : "1.Breakout"
+    string p2 = phase >= 2 ? "2.Momentum" : "2.Momentum"
+    string p3 = phase >= 3 ? "3.Pullback" : "3.Pullback"
+    string p4 = phase >= 4 ? "4.Entry"    : "4.Entry"
+    string stepText = phase == 0 ? "IDLE" : phase == 1 ? p1 : phase == 2 ? p2 : phase == 3 ? p3 : p4
+    color  stepClr  = phase == 3 ? C_GOLD : phase == 4 ? C_SIG_GREEN : color.white
+    table.cell(hud, 0, 2, "STEP",     text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 2, stepText,   text_color=stepClr, text_size=size.small)
+
+    // Progress checklist
+    string chk1 = phase >= 1 ? "OK" : "--"
+    string chk2 = phase >= 2 ? "OK" : "--"
+    string chk3 = phase >= 3 ? "OK" : "--"
+    string chk4 = phase >= 4 ? "OK" : "--"
+    string progress = chk1 + " | " + chk2 + " | " + chk3 + " | " + chk4
+    table.cell(hud, 0, 3, "PROGRESS", text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 3, progress,   text_color=color.white, text_size=size.small)
+
+    // Entry mode
+    table.cell(hud, 0, 4, "MODE",     text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 4, i_entryMode, text_color=color.white, text_size=size.small)
+
+// ==================================================================================
+// 10. ALERT CONDITIONS
+// ==================================================================================
+alertcondition(phase == 1 and phase[1] == 0,  "Phase 1: Breakout Detected",   "Price broke out of 200 EMA channel")
+alertcondition(phase == 2 and phase[1] == 1,  "Phase 2: Momentum Aligned",    "Fast and slow EMAs confirmed above/below channel")
+alertcondition(phase == 3 and phase[1] == 2,  "Phase 3: Pullback Active",     "Price pulled back into the 200 EMA channel — watch for entry")
+alertcondition(longEntry,                       "Phase 4: Long Entry",          "Long entry triggered — all conditions met")
+alertcondition(shortEntry,                      "Phase 4: Short Entry",         "Short entry triggered — all conditions met")
+alertcondition(entryFired and not na(slPrice) and bias == 1 and low <= slPrice,  "Stop Loss Hit (Long)",  "Price hit stop loss on long position")
+alertcondition(entryFired and not na(tpPrice) and bias == 1 and high >= tpPrice, "Take Profit Hit (Long)","Price hit take profit on long position")
