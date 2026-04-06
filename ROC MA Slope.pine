@@ -1,0 +1,262 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © claygrace74
+
+//@version=6
+indicator("ROC MA Slope", shorttitle="ROC Slope", overlay=false, max_labels_count=500)
+
+// ==================================================================================
+// Settings
+// ==================================================================================
+string GRP0        = "General"
+string maType      = input.string("SMA", "MA Type", options=["SMA", "EMA"], group=GRP0)
+int    maLen       = input.int(5,  "MA Smoothing Length", minval=1,          group=GRP0)
+int    slopeLen    = input.int(5,  "Slope Lookback (LinReg)", minval=2,      group=GRP0)
+
+string GRP1        = "Fast"
+int    fastRocLen  = input.int(5,  "ROC Length",  minval=1,                  group=GRP1)
+color  i_colUp1    = input.color(color.aqua,    "Bull Color",               group=GRP1)
+color  i_colDn1    = input.color(color.fuchsia, "Bear Color",               group=GRP1)
+
+string GRP2        = "Slow"
+int    slowRocLen  = input.int(14, "ROC Length",  minval=1,                  group=GRP2)
+color  i_colUp2    = input.color(color.lime,   "Bull Color",                group=GRP2)
+color  i_colDn2    = input.color(color.orange, "Bear Color",                group=GRP2)
+
+string GRP3        = "Display"
+bool   i_showHist  = input.bool(true,  "Show Histogram (Fast MA)", group=GRP3)
+bool   i_showFills = input.bool(true,  "Show Fills",               group=GRP3)
+bool   i_showSlope = input.bool(true,  "Show Slope Lines",         group=GRP3)
+bool   i_showDash  = input.bool(true,  "Show Dashboard",           group=GRP3)
+bool   i_showZero  = input.bool(true,  "Show Zero-Line Crosses",   group=GRP3)
+bool   i_showDiv   = input.bool(false, "Show Divergence Signals",  group=GRP3)
+bool   i_showAccel = input.bool(true,  "Show Acceleration Coloring", group=GRP3)
+int    i_divLB     = input.int(5, "Divergence Lookback", minval=3, maxval=20, group=GRP3)
+
+// ==================================================================================
+// ROC + MA
+// ==================================================================================
+fastRoc = ta.roc(close, fastRocLen)
+slowRoc = ta.roc(close, slowRocLen)
+
+fastMA = maType == "EMA" ? ta.ema(fastRoc, maLen) : ta.sma(fastRoc, maLen)
+slowMA = maType == "EMA" ? ta.ema(slowRoc, maLen) : ta.sma(slowRoc, maLen)
+
+// ==================================================================================
+// Slope (linear regression derivative)
+// ==================================================================================
+fastSlope = ta.linreg(fastMA, slopeLen, 0) - ta.linreg(fastMA, slopeLen, 1)
+slowSlope = ta.linreg(slowMA, slopeLen, 0) - ta.linreg(slowMA, slopeLen, 1)
+
+// ==================================================================================
+// Momentum, Acceleration & Signals
+// ==================================================================================
+bool fast_rising = fastSlope > 0
+bool slow_rising = slowSlope > 0
+
+// Acceleration — slope of slope (curvature)
+float fastAccel = ta.change(fastSlope)
+float slowAccel = ta.change(slowSlope)
+bool  fastAccelUp = fastAccel > 0
+bool  slowAccelUp = slowAccel > 0
+
+// Cross signals
+bool crossUp     = ta.crossover(fastMA, slowMA)
+bool crossDn     = ta.crossunder(fastMA, slowMA)
+bool zeroCrossUp = ta.crossover(fastMA, 0)
+bool zeroCrossDn = ta.crossunder(fastMA, 0)
+
+// Slope convergence — both slopes pointing same direction = aligned momentum
+bool slopesAligned = (fast_rising and slow_rising) or (not fast_rising and not slow_rising)
+bool slopesDiverge = (fast_rising and not slow_rising) or (not fast_rising and slow_rising)
+
+// Divergence detection — price vs fast MA slope
+bool priceHigher = high > ta.highest(high, i_divLB)[1]
+bool slopeNotHigh = fastSlope < ta.highest(fastSlope, i_divLB)[1]
+bool bearDiv     = priceHigher and slopeNotHigh and fastMA > 0
+
+bool priceLower  = low < ta.lowest(low, i_divLB)[1]
+bool slopeNotLow = fastSlope > ta.lowest(fastSlope, i_divLB)[1]
+bool bullDiv     = priceLower and slopeNotLow and fastMA < 0
+
+// ==================================================================================
+// Average Distance Statistics
+// ==================================================================================
+int   avgWindow    = slowRocLen * maLen
+float avgDistAbove = na
+float avgDistBelow = na
+float pctAbove     = na
+
+if not na(fastMA) and not na(slowMA) and avgWindow > 0
+    float sumAbove   = 0.0
+    int   countAbove = 0
+    float sumBelow   = 0.0
+    int   countBelow = 0
+
+    for i = 0 to avgWindow - 1
+        float f    = nz(fastMA[i])
+        float s    = nz(slowMA[i])
+        float diff = f - s
+        if diff > 0
+            sumAbove   += diff
+            countAbove += 1
+        else if diff < 0
+            sumBelow   += math.abs(diff)
+            countBelow += 1
+
+    avgDistAbove := countAbove > 0 ? sumAbove / countAbove : 0.0
+    avgDistBelow := countBelow > 0 ? sumBelow / countBelow : 0.0
+    pctAbove     := (countAbove / avgWindow) * 100.0
+
+// ==================================================================================
+// Colors
+// ==================================================================================
+
+// Slope-based opacity (steeper = more opaque)
+slopeColor(slope, bullCol, bearCol) =>
+    slope > 0
+         ? color.new(bullCol, math.max(0, 80 - math.abs(slope) * 500))
+         : color.new(bearCol, math.max(0, 80 - math.abs(slope) * 500))
+
+color c1line = slopeColor(fastSlope, i_colUp1, i_colDn1)
+color c2line = slopeColor(slowSlope, i_colUp2, i_colDn2)
+
+color c1solid = fast_rising ? i_colUp1 : i_colDn1
+color c2solid = slow_rising ? i_colUp2 : i_colDn2
+
+// 4-color histogram momentum
+bool growBull   = fastMA >= 0 and fastAccelUp
+bool shrinkBull = fastMA >= 0 and not fastAccelUp
+bool growBear   = fastMA < 0 and not fastAccelUp
+bool shrinkBear = fastMA < 0 and fastAccelUp
+color histCol = growBull ? i_colUp1 : shrinkBull ? color.new(i_colUp1, 50) : growBear ? i_colDn1 : color.new(i_colDn1, 50)
+
+// Acceleration-aware slope line colors
+color fastSlopeClr = i_showAccel ? (fast_rising ? (fastAccelUp ? i_colUp1 : color.new(i_colUp1, 50)) : (fastAccelUp ? color.new(i_colDn1, 50) : i_colDn1)) : c1solid
+color slowSlopeClr = i_showAccel ? (slow_rising ? (slowAccelUp ? i_colUp2 : color.new(i_colUp2, 50)) : (slowAccelUp ? color.new(i_colDn2, 50) : i_colDn2)) : c2solid
+
+// ==================================================================================
+// Plots
+// ==================================================================================
+hline(0, "Zero", color.new(color.gray, 60), hline.style_dotted)
+
+// 4-color histogram
+plot(i_showHist ? fastMA : na, "Fast Hist", style=plot.style_histogram, color=color.new(histCol, 40), linewidth=2)
+
+// MA lines
+p1    = plot(fastMA, "Fast ROC MA", c1line, 2)
+p2    = plot(slowMA, "Slow ROC MA", c2line, 2)
+pZero = plot(0.0, display=display.none)
+
+// Slope lines (acceleration-colored)
+plot(i_showSlope ? fastSlope : na, "Fast Slope", fastSlopeClr, 1)
+plot(i_showSlope ? slowSlope : na, "Slow Slope", slowSlopeClr, 1)
+
+// Fills
+fill(p1, pZero, color=i_showFills ? color.new(fastMA >= 0 ? i_colUp1 : i_colDn1, 90) : na, title="Fast/Zero Fill")
+fill(p1, p2,    color=i_showFills ? color.new(fastMA > slowMA ? i_colUp1 : i_colDn1, 85) : na, title="Fast/Slow Fill")
+
+// Cross markers (fast/slow)
+plotshape(crossUp ? fastMA : na, "Cross Up",   shape.triangleup,   location.absolute, i_colUp1, size=size.small)
+plotshape(crossDn ? fastMA : na, "Cross Down",  shape.triangledown, location.absolute, i_colDn1, size=size.small)
+
+// Zero-line crosses
+plotshape(i_showZero and zeroCrossUp, "Zero Up",   shape.circle, location.absolute, color.new(i_colUp1, 20), size=size.tiny)
+plotshape(i_showZero and zeroCrossDn, "Zero Down",  shape.circle, location.absolute, color.new(i_colDn1, 20), size=size.tiny)
+
+// Divergence
+bgcolor(i_showDiv and bearDiv ? color.new(color.orange, 88) : na, title="Bearish Divergence")
+bgcolor(i_showDiv and bullDiv ? color.new(color.teal, 88)   : na, title="Bullish Divergence")
+
+// Slope alignment background
+bgcolor(slopesDiverge ? color.new(color.yellow, 95) : na, title="Slopes Diverging")
+
+// ==================================================================================
+// Dashboard
+// ==================================================================================
+if barstate.islast and i_showDash
+    var table dash = table.new(position.top_right, 3, 13, bgcolor=color.rgb(20, 20, 30, 10), border_color=color.rgb(60, 60, 80), border_width=1, frame_color=color.rgb(60, 60, 80), frame_width=1)
+
+    color headerClr = color.rgb(200, 200, 220)
+    color labelClr  = color.rgb(160, 160, 180)
+
+    // Header
+    table.cell(dash, 0, 0, "ROC MA Slope", text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 0, "Fast",         text_color=i_colUp1,  text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 0, "Slow",         text_color=i_colUp2,  text_size=size.small, text_halign=text.align_center)
+
+    // ROC Length
+    table.cell(dash, 0, 1, "ROC Len",     text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 1, str.tostring(fastRocLen), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 1, str.tostring(slowRocLen), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+
+    // MA Type + Length
+    table.cell(dash, 0, 2, maType + " Len", text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, str.tostring(maLen), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 2, str.tostring(maLen), text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+
+    // MA Value
+    table.cell(dash, 0, 3, "MA Value",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, str.tostring(fastMA, "#.####"), text_color=c1solid, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 3, str.tostring(slowMA, "#.####"), text_color=c2solid, text_size=size.small, text_halign=text.align_center)
+
+    // Slope Value
+    table.cell(dash, 0, 4, "Slope",       text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, str.tostring(fastSlope, "#.####"), text_color=c1solid, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 4, str.tostring(slowSlope, "#.####"), text_color=c2solid, text_size=size.small, text_halign=text.align_center)
+
+    // Momentum
+    table.cell(dash, 0, 5, "Momentum",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 5, fast_rising ? "Rising" : "Falling", text_color=fast_rising ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 5, slow_rising ? "Rising" : "Falling", text_color=slow_rising ? i_colUp2 : i_colDn2, text_size=size.small, text_halign=text.align_center)
+
+    // Acceleration
+    table.cell(dash, 0, 6, "Accel",       text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, fastAccelUp ? "Accelerating" : "Decelerating", text_color=fastAccelUp ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 6, slowAccelUp ? "Accelerating" : "Decelerating", text_color=slowAccelUp ? i_colUp2 : i_colDn2, text_size=size.small, text_halign=text.align_center)
+
+    // Slope Alignment
+    table.cell(dash, 0, 7, "Alignment",   text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    string alignTxt = slopesAligned ? "ALIGNED" : "DIVERGING"
+    color alignClr  = slopesAligned ? color.green : color.yellow
+    table.cell(dash, 1, 7, alignTxt,       text_color=alignClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 7, "",             text_size=size.small)
+
+    // Bias
+    string biasText  = fastMA > slowMA and fastMA > 0 ? "Strong Bull" : fastMA > slowMA and fastMA <= 0 ? "Weak Bull" : fastMA <= slowMA and fastMA > 0 ? "Weak Bear" : "Strong Bear"
+    color  biasColor = fastMA > slowMA ? i_colUp1 : i_colDn1
+    table.cell(dash, 0, 8, "Bias",        text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 8, biasText,       text_color=biasColor, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 8, "",             text_size=size.small)
+
+    // --- Spread Stats ---
+    table.cell(dash, 0, 9, "Spread Stats", text_color=headerClr, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 1, 9, "(" + str.tostring(avgWindow) + " bars)", text_color=color.rgb(120, 120, 140), text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 9, "",             text_size=size.small)
+
+    float curSpread = fastMA - slowMA
+    bool  isAbove   = curSpread > 0
+
+    table.cell(dash, 0, 10, "Avg Above",  text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 10, str.tostring(avgDistAbove, "#.####") + " %", text_color=i_colUp1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 10, isAbove ? str.tostring(curSpread, "#.####") + " % now" : "—", text_color=isAbove ? i_colUp1 : color.rgb(120, 120, 140), text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 11, "Avg Below",  text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 11, str.tostring(avgDistBelow, "#.####") + " %", text_color=i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 11, not isAbove ? str.tostring(math.abs(curSpread), "#.####") + " % now" : "—", text_color=not isAbove ? i_colDn1 : color.rgb(120, 120, 140), text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 12, "% Above",    text_color=labelClr, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 12, str.tostring(pctAbove, "#.#") + " %", text_color=pctAbove >= 50 ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 2, 12, str.tostring(100.0 - pctAbove, "#.#") + " % below", text_color=pctAbove < 50 ? i_colUp1 : i_colDn1, text_size=size.small, text_halign=text.align_center)
+
+// ==================================================================================
+// Alert Conditions
+// ==================================================================================
+alertcondition(crossUp,      "Fast Crossed Above Slow",  "Fast ROC MA crossed above slow — bullish momentum shift")
+alertcondition(crossDn,      "Fast Crossed Below Slow",  "Fast ROC MA crossed below slow — bearish momentum shift")
+alertcondition(zeroCrossUp,  "Fast MA Above Zero",       "Fast ROC MA crossed above zero — positive momentum")
+alertcondition(zeroCrossDn,  "Fast MA Below Zero",       "Fast ROC MA crossed below zero — negative momentum")
+alertcondition(bullDiv,      "Bullish Divergence",       "Price making new low but slope is not — potential reversal")
+alertcondition(bearDiv,      "Bearish Divergence",       "Price making new high but slope is not — potential reversal")
+alertcondition(growBull,     "Bull Accelerating",        "Fast MA positive and slope accelerating")
+alertcondition(growBear,     "Bear Accelerating",        "Fast MA negative and slope accelerating")
+alertcondition(slopesDiverge and not slopesDiverge[1], "Slopes Diverging", "Fast and slow slopes pointing opposite directions")
