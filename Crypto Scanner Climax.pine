@@ -33,6 +33,7 @@ showVolat   = input.bool(true, "Show Volatility (ATR/STDEV/Z-Scr)", group=grp_da
 grp_feat    = "Overlay Toggles"
 i_showVolC  = input.bool(true, "Show Volume Candles", group=grp_feat)
 i_showSHA   = input.bool(false, "Show Smoothed Heikin Ashi", group=grp_feat)
+i_showHAline = input.bool(false, "Show HA Trend Line", group=grp_feat)
 i_showBB    = input.bool(false, "Show Bollinger Bands", group=grp_feat)
 i_showKC    = input.bool(false, "Show Keltner Channels", group=grp_feat)
 i_showIchi  = input.bool(false, "Show Ichimoku", group=grp_feat)
@@ -195,6 +196,10 @@ sha_bodyClr = i_showVolC ? (sha_bull ? bullColor : bearColor) : (sha_bull ? colo
 sha_wickClr = i_showVolC ? sha_bodyClr : (sha_bull ? color.rgb(0, 180, 90) : color.rgb(200, 60, 60))
 
 plotcandle(i_showSHA ? sha_o2 : na, i_showSHA ? sha_h2 : na, i_showSHA ? sha_l2 : na, i_showSHA ? sha_c2 : na, title="Smoothed HA", color=sha_bodyClr, wickcolor=sha_wickClr, bordercolor=sha_bodyClr, force_overlay=true)
+
+// --- HA Trend Line: HA close value, colored by HA direction ---
+ha_lineClr = sha_bull ? color.rgb(0, 230, 118) : color.rgb(255, 82, 82)
+plot(i_showHAline ? sha_c2 : na, "HA Trend Line", color=ha_lineClr, linewidth=2, force_overlay=true)
 
 plot(i_showTar ? tar1 : na, "Tar Baby", color=color.new(color.red, 40), linewidth=2, force_overlay=true)
 
