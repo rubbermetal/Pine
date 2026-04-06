@@ -187,8 +187,10 @@ sha_l2 = ta.ema(sha_haLow, sha_len2)
 sha_c2 = ta.ema(sha_haClose, sha_len2)
 
 sha_bull = sha_c2 >= sha_o2
-sha_bodyClr = sha_bull ? color.rgb(0, 230, 118) : color.rgb(255, 82, 82)
-sha_wickClr = sha_bull ? color.rgb(0, 180, 90) : color.rgb(200, 60, 60)
+
+// HA candle coloring: use volume profile colors when volume candles enabled, otherwise simple green/red
+sha_bodyClr = i_showVolC ? (sha_bull ? bullColor : bearColor) : (sha_bull ? color.rgb(0, 230, 118) : color.rgb(255, 82, 82))
+sha_wickClr = i_showVolC ? sha_bodyClr : (sha_bull ? color.rgb(0, 180, 90) : color.rgb(200, 60, 60))
 
 plotcandle(i_showSHA ? sha_o2 : na, i_showSHA ? sha_h2 : na, i_showSHA ? sha_l2 : na, i_showSHA ? sha_c2 : na, title="Smoothed HA", color=sha_bodyClr, wickcolor=sha_wickClr, bordercolor=sha_bodyClr, force_overlay=true)
 
