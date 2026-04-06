@@ -1,212 +1,178 @@
 // This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © claygrace74
+// Technical spec: 5-EMA Reversal Strategy
+// Visual spec: EMA Channel Reversal Design Document
 
 //@version=6
-indicator("EMA Channel Reversal", shorttitle="EMA Ch Rev", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+strategy("EMA Channel Reversal", shorttitle="EMA Ch Rev", overlay=true, initial_capital=1000, default_qty_type=strategy.percent_of_equity, default_qty_value=10, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
 
 // ==================================================================================
-// 1. INPUTS
+// PHASE 1: INPUTS & CONFIGURATION
 // ==================================================================================
-var ch_group = "200 EMA Channel"
-int    i_chanLen    = input.int(200, "Channel EMA Length", minval=10, group=ch_group)
-color  i_chanColor  = input.color(#708090, "Channel Color (Slate)", group=ch_group)
+grp_ma    = "Moving Averages"
+len_long  = input.int(200, "Long Term EMA Length", group=grp_ma)
+len_fast  = input.int(5, "Fast Momentum EMA (White)", group=grp_ma)
+len_slow  = input.int(8, "Slow Momentum EMA (Green)", group=grp_ma)
 
-var mom_group = "Momentum EMAs"
-int    i_fastLen    = input.int(5, "Fast EMA Length", minval=1, group=mom_group)
-int    i_slowLen    = input.int(8, "Slow EMA Length", minval=1, group=mom_group)
-color  i_fastColor  = input.color(#FFFFFF, "Fast EMA (White)", group=mom_group)
-color  i_slowColor  = input.color(#00FFAB, "Slow EMA (Mint)", group=mom_group)
+grp_strat = "Strategy Rules"
+use_alt_entry = input.bool(false, "Use Alternative Entry (Price Action)", group=grp_strat)
+rr_ratio      = input.float(2.0, "Risk/Reward Ratio", minval=0.5, step=0.5, group=grp_strat)
 
-var entry_group = "Entry & Risk"
-string i_entryMode  = input.string("Crossover", "Entry Mode", options=["Crossover", "Price Action"], group=entry_group)
-float  i_rrRatio    = input.float(2.0, "Risk:Reward Ratio", minval=0.5, step=0.5, group=entry_group)
-
-var disp_group = "Display"
-bool   i_showHUD    = input.bool(true, "Show Status HUD", group=disp_group)
-bool   i_showRR     = input.bool(true, "Show R:R Overlay", group=disp_group)
-bool   i_showGlow   = input.bool(true, "Show Neon Glow on Momentum Lines", group=disp_group)
+grp_vis = "Visual Design"
+i_showHUD     = input.bool(true, "Show Status HUD", group=grp_vis)
+i_showRR      = input.bool(true, "Show R:R Overlay", group=grp_vis)
+i_showGlow    = input.bool(true, "Show Neon Glow on Momentum Lines", group=grp_vis)
+i_showPullback = input.bool(true, "Show Pullback Diamonds", group=grp_vis)
 
 // ==================================================================================
-// 2. COLOR PALETTE
+// COLOR PALETTE (from Visual Design Spec)
 // ==================================================================================
-color C_SLATE      = i_chanColor       // #708090
-color C_WHITE      = i_fastColor       // #FFFFFF
-color C_MINT       = i_slowColor       // #00FFAB
-color C_GOLD       = #FFD700           // Pullback warning
-color C_SIG_GREEN  = #39FF14           // Bullish entry / TP
-color C_SIG_RED    = #FF3131           // Bearish entry / SL
+color C_SLATE     = #708090     // 200 EMA Channel
+color C_WHITE     = #FFFFFF     // Fast EMA (5)
+color C_MINT      = #00FFAB     // Slow EMA (8)
+color C_GOLD      = #FFD700     // Pullback warning
+color C_SIG_GREEN = #39FF14     // Bullish entry / TP
+color C_SIG_RED   = #FF3131     // Bearish entry / SL
 
 // ==================================================================================
-// 3. EMA CALCULATIONS
+// PHASE 2: INDICATOR CALCULATIONS
+// ==================================================================================
+ema200_high  = ta.ema(high, len_long)
+ema200_close = ta.ema(close, len_long)
+ema200_low   = ta.ema(low, len_long)
+
+ema_fast = ta.ema(close, len_fast)
+ema_slow = ta.ema(close, len_slow)
+
+// ==================================================================================
+// PHASE 3: PLOTTING & VISUALIZATION
 // ==================================================================================
 
 // --- 200 EMA Channel ---
-emaHigh  = ta.ema(high, i_chanLen)
-emaClose = ta.ema(close, i_chanLen)
-emaLow   = ta.ema(low, i_chanLen)
+p_high = plot(ema200_high, color=color.new(C_SLATE, 30), linewidth=1, title="EMA 200 High")
+p_low  = plot(ema200_low,  color=color.new(C_SLATE, 30), linewidth=1, title="EMA 200 Low")
+plot(ema200_close, color=color.new(C_SLATE, 50), linewidth=1, style=plot.style_line, title="EMA 200 Close")
 
-// --- Momentum Lines ---
-emaFast = ta.ema(close, i_fastLen)
-emaSlow = ta.ema(close, i_slowLen)
+// --- Momentum Ribbon with Neon Glow ---
+plot(i_showGlow ? ema_fast : na, "Fast Glow", color=color.new(C_WHITE, 70), linewidth=5)
+plot(ema_fast, "EMA 5 (Fast)", color=C_WHITE, linewidth=2)
 
-// ==================================================================================
-// 4. STATE MACHINE (var-based persistence)
-// ==================================================================================
-var int   phase          = 0     // 0=idle, 1=breakout, 2=momentum, 3=pullback, 4=entry
-var int   bias           = 0     // 1=bull, -1=bear, 0=neutral
-var float prePullbackHi  = na    // Highest high before pullback (for Price Action mode)
-var float prePullbackLo  = na    // Lowest low before pullback
-var float entryPrice     = na
-var float slPrice        = na
-var float tpPrice        = na
-var bool  entryFired     = false
-
-// --- Phase 1: Directional Bias ---
-bool bullBreakout = close > emaHigh
-bool bearBreakout = close < emaLow
-bool inChannel    = close <= emaHigh and close >= emaLow
-
-// Reset bias if price re-enters channel
-if inChannel and phase < 3
-    bias  := 0
-    phase := 0
-
-if bullBreakout and bias != 1
-    bias  := 1
-    phase := 1
-    prePullbackHi := high
-    prePullbackLo := na
-    entryFired := false
-    entryPrice := na
-    slPrice := na
-    tpPrice := na
-
-if bearBreakout and bias != -1
-    bias  := -1
-    phase := 1
-    prePullbackLo := low
-    prePullbackHi := na
-    entryFired := false
-    entryPrice := na
-    slPrice := na
-    tpPrice := na
-
-// --- Phase 2: Momentum Confirmation ---
-bool momAlignedBull = emaFast > emaHigh and emaSlow > emaHigh
-bool momAlignedBear = emaFast < emaLow and emaSlow < emaLow
-
-if phase == 1 and bias == 1 and momAlignedBull
-    phase := 2
-if phase == 1 and bias == -1 and momAlignedBear
-    phase := 2
-
-// Track pre-pullback extremes during phase 2
-if phase == 2 and bias == 1
-    prePullbackHi := math.max(nz(prePullbackHi, high), high)
-if phase == 2 and bias == -1
-    prePullbackLo := math.min(nz(prePullbackLo, low), low)
-
-// --- Phase 3: Pullback Detection ---
-bool pullbackBull = bias == 1 and low <= emaHigh   // Price touches or enters channel from above
-bool pullbackBear = bias == -1 and high >= emaLow  // Price touches or enters channel from below
-
-if phase == 2 and pullbackBull
-    phase := 3
-if phase == 2 and pullbackBear
-    phase := 3
-
-// --- Phase 4: Entry Execution ---
-bool crossoverEntry = ta.crossover(emaFast, emaSlow)
-bool crossunderEntry = ta.crossunder(emaFast, emaSlow)
-bool priceActionLong = not na(prePullbackHi) and high > prePullbackHi
-bool priceActionShort = not na(prePullbackLo) and low < prePullbackLo
-
-bool longEntry  = false
-bool shortEntry = false
-
-if phase == 3 and bias == 1 and not entryFired
-    if i_entryMode == "Crossover" and crossoverEntry
-        longEntry := true
-    if i_entryMode == "Price Action" and priceActionLong
-        longEntry := true
-
-if phase == 3 and bias == -1 and not entryFired
-    if i_entryMode == "Crossover" and crossunderEntry
-        shortEntry := true
-    if i_entryMode == "Price Action" and priceActionShort
-        shortEntry := true
-
-// Calculate R:R on entry
-if longEntry
-    phase      := 4
-    entryFired := true
-    entryPrice := close
-    slPrice    := emaLow
-    float risk  = entryPrice - slPrice
-    tpPrice    := entryPrice + risk * i_rrRatio
-
-if shortEntry
-    phase      := 4
-    entryFired := true
-    entryPrice := close
-    slPrice    := emaHigh
-    float risk  = slPrice - entryPrice
-    tpPrice    := entryPrice - risk * i_rrRatio
-
-// Clear R:R overlay if SL or TP hit after entry
-if entryFired and not na(slPrice) and not na(tpPrice)
-    if bias == 1 and (low <= slPrice or high >= tpPrice)
-        entryPrice := na
-        slPrice    := na
-        tpPrice    := na
-        phase      := 0
-        bias       := 0
-    if bias == -1 and (high >= slPrice or low <= tpPrice)
-        entryPrice := na
-        slPrice    := na
-        tpPrice    := na
-        phase      := 0
-        bias       := 0
+plot(i_showGlow ? ema_slow : na, "Slow Glow", color=color.new(C_MINT, 70), linewidth=5)
+plot(ema_slow, "EMA 8 (Slow)", color=C_MINT, linewidth=2)
 
 // ==================================================================================
-// 5. CHANNEL PLOTS
+// PHASE 4: STATE MANAGEMENT (CRITICAL LOGIC)
+// Combined breakout + momentum confirmation into single state check.
+// Uses var persistence to track the sequence: Confirm -> Pullback -> Entry.
 // ==================================================================================
 
-// Channel boundaries
-pHigh = plot(emaHigh, "200 EMA High", color=C_SLATE, linewidth=1)
-pLow  = plot(emaLow,  "200 EMA Low",  color=C_SLATE, linewidth=1)
-plot(emaClose, "200 EMA Close", color=color.new(C_SLATE, 50), linewidth=1, style=plot.style_line)
+// State Tracking Variables
+var int   trend_state     = 0      // 1 = Bullish, -1 = Bearish, 0 = Neutral
+var bool  pullback_active = false
+var float swing_high      = na     // Tracked for Price Action entry mode
+var float swing_low       = na
 
-// Dynamic channel fill — changes color with context
-chanFillColor = bias == 1 ? color.new(C_SIG_GREEN, 90) : bias == -1 ? color.new(C_SIG_RED, 90) : color.new(C_SLATE, 90)
-fill(pHigh, pLow, color=chanFillColor, title="Channel Fill")
+// 1. Initial Signal & Confirmation (Phase 1+2 combined)
+// Both price AND momentum EMAs must be outside the channel
+price_above_channel = close > ema200_high
+emas_above_channel  = ema_fast > ema200_high and ema_slow > ema200_high
+
+price_below_channel = close < ema200_low
+emas_below_channel  = ema_fast < ema200_low and ema_slow < ema200_low
+
+// Set or update trend state
+if price_above_channel and emas_above_channel
+    trend_state := 1
+    if not pullback_active
+        swing_high := high
+    pullback_active := false
+else if price_below_channel and emas_below_channel
+    trend_state := -1
+    if not pullback_active
+        swing_low := low
+    pullback_active := false
+
+// Update swing extremes while waiting for pullback
+if trend_state == 1 and not pullback_active
+    swing_high := math.max(nz(swing_high, high), high)
+if trend_state == -1 and not pullback_active
+    swing_low := math.min(nz(swing_low, low), low)
+
+// 2. Pullback Detection
+// Bullish pullback: price low touches or enters the channel from above
+if trend_state == 1 and low <= ema200_high
+    pullback_active := true
+
+// Bearish pullback: price high touches or enters the channel from below
+if trend_state == -1 and high >= ema200_low
+    pullback_active := true
+
+// Dynamic channel fill — changes color with bias
+chanFillColor = trend_state == 1 ? color.new(C_SIG_GREEN, 90) : trend_state == -1 ? color.new(C_SIG_RED, 90) : color.new(C_SLATE, 90)
+fill(p_high, p_low, color=chanFillColor, title="EMA 200 Channel")
 
 // ==================================================================================
-// 6. MOMENTUM RIBBON WITH NEON GLOW
+// PHASE 5: ENTRY TRIGGERS
 // ==================================================================================
+bool long_entry  = false
+bool short_entry = false
 
-// Glow effect — wider transparent line behind the main line
-plot(i_showGlow ? emaFast : na, "Fast Glow", color=color.new(C_WHITE, 70), linewidth=5)
-plot(emaFast, "Fast EMA (5)", color=C_WHITE, linewidth=2)
-
-plot(i_showGlow ? emaSlow : na, "Slow Glow", color=color.new(C_MINT, 70), linewidth=5)
-plot(emaSlow, "Slow EMA (8)", color=C_MINT, linewidth=2)
-
-// ==================================================================================
-// 7. SIGNAL SHAPES
-// ==================================================================================
-
-// Phase 3 — Pullback diamond (gold, inside channel)
-bool showPullback = (phase == 3 or (phase[1] == 2 and phase == 3))
-pullbackY = bias == 1 ? emaClose : bias == -1 ? emaClose : na
-plotshape(showPullback and showPullback[0] and not showPullback[1], style=shape.diamond, location=location.absolute, color=C_GOLD, size=size.small, title="Pullback Diamond")
-
-// Phase 4 — Entry arrows
-plotshape(longEntry,  style=shape.triangleup,   location=location.belowbar, color=C_SIG_GREEN, text="LONG",  textcolor=C_SIG_GREEN, size=size.small, title="Long Entry")
-plotshape(shortEntry, style=shape.triangledown,  location=location.abovebar, color=C_SIG_RED,   text="SHORT", textcolor=C_SIG_RED,   size=size.small, title="Short Entry")
+if use_alt_entry
+    // Alternative: Breakout of swing high/low after pullback
+    if trend_state == 1 and pullback_active and close > swing_high
+        long_entry := true
+    if trend_state == -1 and pullback_active and close < swing_low
+        short_entry := true
+else
+    // Standard: EMA crossover after pullback
+    if trend_state == 1 and pullback_active and ta.crossover(ema_fast, ema_slow)
+        long_entry := true
+    if trend_state == -1 and pullback_active and ta.crossunder(ema_fast, ema_slow)
+        short_entry := true
 
 // ==================================================================================
-// 8. RISK MANAGEMENT OVERLAY (R:R TOOL)
+// PHASE 6: EXECUTION & RISK MANAGEMENT
+// ==================================================================================
+var float sl_level = na
+var float tp_level = na
+
+if long_entry and strategy.position_size == 0
+    sl_level := ema200_low
+    float risk = close - sl_level
+    tp_level := close + (risk * rr_ratio)
+    strategy.entry("Long", strategy.long)
+    // Reset state to prevent re-entry on same setup
+    trend_state     := 0
+    pullback_active := false
+
+if short_entry and strategy.position_size == 0
+    sl_level := ema200_high
+    float risk = sl_level - close
+    tp_level := close - (risk * rr_ratio)
+    strategy.entry("Short", strategy.short)
+    trend_state     := 0
+    pullback_active := false
+
+// Exit orders
+if strategy.position_size > 0
+    strategy.exit("Exit Long", "Long", stop=sl_level, limit=tp_level)
+if strategy.position_size < 0
+    strategy.exit("Exit Short", "Short", stop=sl_level, limit=tp_level)
+
+// ==================================================================================
+// SIGNAL SHAPES
+// ==================================================================================
+
+// Pullback diamond (gold, inside channel)
+bool newPullback = pullback_active and not pullback_active[1]
+plotshape(i_showPullback and newPullback, style=shape.diamond, location=location.absolute, color=C_GOLD, size=size.small, title="Pullback Diamond")
+
+// Entry arrows
+plotshape(long_entry and strategy.position_size == 0,  style=shape.triangleup,   location=location.belowbar, color=C_SIG_GREEN, text="LONG",  textcolor=C_SIG_GREEN, size=size.small, title="Long Entry")
+plotshape(short_entry and strategy.position_size == 0, style=shape.triangledown, location=location.abovebar, color=C_SIG_RED,   text="SHORT", textcolor=C_SIG_RED,   size=size.small, title="Short Entry")
+
+// ==================================================================================
+// R:R OVERLAY (Visual Design Spec Section 5)
 // ==================================================================================
 var line  slLine    = na
 var line  tpLine    = na
@@ -216,7 +182,7 @@ var box   lossBox   = na
 var label slLabel   = na
 var label tpLabel   = na
 
-// Clean previous
+// Clean previous frame
 line.delete(slLine)
 line.delete(tpLine)
 line.delete(entLine)
@@ -225,80 +191,71 @@ box.delete(lossBox)
 label.delete(slLabel)
 label.delete(tpLabel)
 
-if i_showRR and entryFired and not na(entryPrice) and not na(slPrice) and not na(tpPrice)
+if i_showRR and strategy.position_size != 0 and not na(sl_level) and not na(tp_level)
+    float ep     = strategy.position_avg_price
     int startBar = bar_index - 1
     int endBar   = bar_index + 20
 
     // Entry line
-    entLine := line.new(startBar, entryPrice, endBar, entryPrice, color=color.new(color.white, 50), width=1, style=line.style_dotted)
+    entLine := line.new(startBar, ep, endBar, ep, color=color.new(color.white, 50), width=1, style=line.style_dotted)
 
     // SL line
-    slLine := line.new(startBar, slPrice, endBar, slPrice, color=C_SIG_RED, width=1, style=line.style_solid)
+    slLine := line.new(startBar, sl_level, endBar, sl_level, color=C_SIG_RED, width=1, style=line.style_solid)
 
     // TP line
-    tpLine := line.new(startBar, tpPrice, endBar, tpPrice, color=C_SIG_GREEN, width=1, style=line.style_solid)
+    tpLine := line.new(startBar, tp_level, endBar, tp_level, color=C_SIG_GREEN, width=1, style=line.style_solid)
 
-    // Profit zone box
-    if bias == 1
-        profitBox := box.new(startBar, tpPrice, endBar, entryPrice, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
-        lossBox   := box.new(startBar, entryPrice, endBar, slPrice, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
+    // Profit/loss zone boxes
+    if strategy.position_size > 0
+        profitBox := box.new(startBar, tp_level, endBar, ep, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
+        lossBox   := box.new(startBar, ep, endBar, sl_level, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
     else
-        profitBox := box.new(startBar, entryPrice, endBar, tpPrice, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
-        lossBox   := box.new(startBar, slPrice, endBar, entryPrice, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
+        profitBox := box.new(startBar, ep, endBar, tp_level, bgcolor=color.new(C_SIG_GREEN, 85), border_color=color(na))
+        lossBox   := box.new(startBar, sl_level, endBar, ep, bgcolor=color.new(C_SIG_RED, 85), border_color=color(na))
 
     // Labels
-    slLabel := label.new(endBar + 2, slPrice, "SL", style=label.style_none, textcolor=C_SIG_RED, size=size.small)
-    tpLabel := label.new(endBar + 2, tpPrice, "TP", style=label.style_none, textcolor=C_SIG_GREEN, size=size.small)
+    slLabel := label.new(endBar + 2, sl_level, "SL", style=label.style_none, textcolor=C_SIG_RED, size=size.small)
+    tpLabel := label.new(endBar + 2, tp_level, "TP", style=label.style_none, textcolor=C_SIG_GREEN, size=size.small)
 
 // ==================================================================================
-// 9. STATUS HUD (TOP-RIGHT DASHBOARD)
+// STATUS HUD (Visual Design Spec Section 6)
 // ==================================================================================
 var table hud = table.new(position.top_right, 2, 5, bgcolor=color.new(#000000, 60), border_width=1, border_color=color.new(color.gray, 60))
 
 if i_showHUD and barstate.islast
     // Bias
-    string biasText  = bias == 1 ? "BULLISH" : bias == -1 ? "BEARISH" : "NEUTRAL"
-    color  biasColor = bias == 1 ? C_SIG_GREEN : bias == -1 ? C_SIG_RED : color.gray
+    string biasText  = trend_state == 1 ? "BULLISH" : trend_state == -1 ? "BEARISH" : "NEUTRAL"
+    color  biasColor = trend_state == 1 ? C_SIG_GREEN : trend_state == -1 ? C_SIG_RED : color.gray
     table.cell(hud, 0, 0, "BIAS",     text_color=color.gray, text_size=size.small)
     table.cell(hud, 1, 0, biasText,   text_color=biasColor, text_size=size.small)
 
     // Momentum alignment
-    bool aligned = (bias == 1 and momAlignedBull) or (bias == -1 and momAlignedBear)
-    string momText = aligned ? "ALIGNED" : "DISALIGNED"
-    color  momClr  = aligned ? C_SIG_GREEN : color.new(C_SIG_RED, 30)
+    bool aligned = (trend_state == 1 and emas_above_channel) or (trend_state == -1 and emas_below_channel)
     table.cell(hud, 0, 1, "MOMENTUM", text_color=color.gray, text_size=size.small)
-    table.cell(hud, 1, 1, momText,    text_color=momClr, text_size=size.small)
+    table.cell(hud, 1, 1, aligned ? "ALIGNED" : "DISALIGNED", text_color=aligned ? C_SIG_GREEN : color.new(C_SIG_RED, 30), text_size=size.small)
 
-    // Current phase with step indicator
-    string p1 = phase >= 1 ? "1.Breakout" : "1.Breakout"
-    string p2 = phase >= 2 ? "2.Momentum" : "2.Momentum"
-    string p3 = phase >= 3 ? "3.Pullback" : "3.Pullback"
-    string p4 = phase >= 4 ? "4.Entry"    : "4.Entry"
-    string stepText = phase == 0 ? "IDLE" : phase == 1 ? p1 : phase == 2 ? p2 : phase == 3 ? p3 : p4
-    color  stepClr  = phase == 3 ? C_GOLD : phase == 4 ? C_SIG_GREEN : color.white
+    // Current step
+    string stepText = trend_state == 0 ? "IDLE" : pullback_active ? "3. Pullback" : (trend_state == 1 and emas_above_channel) or (trend_state == -1 and emas_below_channel) ? "2. Confirmed" : "1. Breakout"
+    color  stepClr  = pullback_active ? C_GOLD : trend_state != 0 ? color.white : color.gray
     table.cell(hud, 0, 2, "STEP",     text_color=color.gray, text_size=size.small)
     table.cell(hud, 1, 2, stepText,   text_color=stepClr, text_size=size.small)
 
-    // Progress checklist
-    string chk1 = phase >= 1 ? "OK" : "--"
-    string chk2 = phase >= 2 ? "OK" : "--"
-    string chk3 = phase >= 3 ? "OK" : "--"
-    string chk4 = phase >= 4 ? "OK" : "--"
-    string progress = chk1 + " | " + chk2 + " | " + chk3 + " | " + chk4
-    table.cell(hud, 0, 3, "PROGRESS", text_color=color.gray, text_size=size.small)
-    table.cell(hud, 1, 3, progress,   text_color=color.white, text_size=size.small)
+    // Position status
+    string posText = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    color  posClr  = strategy.position_size > 0 ? C_SIG_GREEN : strategy.position_size < 0 ? C_SIG_RED : color.gray
+    table.cell(hud, 0, 3, "POSITION", text_color=color.gray, text_size=size.small)
+    table.cell(hud, 1, 3, posText,    text_color=posClr, text_size=size.small)
 
     // Entry mode
     table.cell(hud, 0, 4, "MODE",     text_color=color.gray, text_size=size.small)
-    table.cell(hud, 1, 4, i_entryMode, text_color=color.white, text_size=size.small)
+    table.cell(hud, 1, 4, use_alt_entry ? "Price Action" : "Crossover", text_color=color.white, text_size=size.small)
 
 // ==================================================================================
-// 10. ALERT CONDITIONS
+// ALERT CONDITIONS
 // ==================================================================================
-alertcondition(phase == 1 and phase[1] == 0,  "Phase 1: Breakout Detected",   "Price broke out of 200 EMA channel")
-alertcondition(phase == 2 and phase[1] == 1,  "Phase 2: Momentum Aligned",    "Fast and slow EMAs confirmed above/below channel")
-alertcondition(phase == 3 and phase[1] == 2,  "Phase 3: Pullback Active",     "Price pulled back into the 200 EMA channel — watch for entry")
-alertcondition(longEntry,                       "Phase 4: Long Entry",          "Long entry triggered — all conditions met")
-alertcondition(shortEntry,                      "Phase 4: Short Entry",         "Short entry triggered — all conditions met")
-alertcondition(entryFired and not na(slPrice) and bias == 1 and low <= slPrice,  "Stop Loss Hit (Long)",  "Price hit stop loss on long position")
-alertcondition(entryFired and not na(tpPrice) and bias == 1 and high >= tpPrice, "Take Profit Hit (Long)","Price hit take profit on long position")
+alertcondition(trend_state == 1 and trend_state[1] != 1,   "Bullish Bias Confirmed", "Price and EMAs confirmed above 200 EMA channel")
+alertcondition(trend_state == -1 and trend_state[1] != -1,  "Bearish Bias Confirmed", "Price and EMAs confirmed below 200 EMA channel")
+alertcondition(newPullback and trend_state == 1,             "Bullish Pullback Active", "Price pulled back to 200 EMA channel — watch for long entry")
+alertcondition(newPullback and trend_state == -1,            "Bearish Pullback Active", "Price pulled back to 200 EMA channel — watch for short entry")
+alertcondition(long_entry and strategy.position_size == 0,   "Long Entry Triggered",   "All conditions met — long entry executed")
+alertcondition(short_entry and strategy.position_size == 0,  "Short Entry Triggered",  "All conditions met — short entry executed")
