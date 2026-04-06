@@ -32,6 +32,7 @@ showVolat   = input.bool(true, "Show Volatility (ATR/STDEV/Z-Scr)", group=grp_da
 
 grp_feat    = "Overlay Toggles"
 i_showVolC  = input.bool(true, "Show Volume Candles", group=grp_feat)
+i_showSHA   = input.bool(false, "Show Smoothed Heikin Ashi", group=grp_feat)
 i_showBB    = input.bool(false, "Show Bollinger Bands", group=grp_feat)
 i_showKC    = input.bool(false, "Show Keltner Channels", group=grp_feat)
 i_showIchi  = input.bool(false, "Show Ichimoku", group=grp_feat)
@@ -40,6 +41,10 @@ i_showTar   = input.bool(false, "Show Tar Baby", group=grp_feat)
 i_showALMA  = input.bool(false, "Show ALMA", group=grp_feat)
 i_showEMA   = input.bool(false, "Show EMA Ribbon", group=grp_feat)
 i_showTarBand = input.bool(false, "Show Tar Baby Bands", group=grp_feat)
+
+grp_sha     = "Smoothed Heikin Ashi"
+sha_len1    = input.int(10, "Pre-Smoothing EMA", minval=1, group=grp_sha, tooltip="EMA applied to OHLC before HA calculation")
+sha_len2    = input.int(10, "Post-Smoothing EMA", minval=1, group=grp_sha, tooltip="EMA applied to HA candles after calculation")
 
 grp_tarB    = "Tar Baby Band Settings"
 tarB_mult   = input.float(2.0, "Band Multiplier", minval=0.1, step=0.1, group=grp_tarB)
@@ -160,6 +165,32 @@ bearColor = volMult >= 2.0 ? c_bearMax : volMult >= 1.5 ? c_bearMid : volMult >=
 volColor = isBull ? bullColor : bearColor
 
 plotcandle(i_showVolC ? open : na, i_showVolC ? high : na, i_showVolC ? low : na, i_showVolC ? close : na, title="Volume Candles", color=volColor, wickcolor=volColor, bordercolor=volColor, force_overlay=true)
+
+// --- Smoothed Heikin Ashi Candles ---
+// Step 1: Pre-smooth OHLC with EMA
+sha_o1 = ta.ema(open, sha_len1)
+sha_h1 = ta.ema(high, sha_len1)
+sha_l1 = ta.ema(low, sha_len1)
+sha_c1 = ta.ema(close, sha_len1)
+
+// Step 2: Apply Heikin Ashi formula to smoothed values
+float sha_haClose = (sha_o1 + sha_h1 + sha_l1 + sha_c1) / 4
+var float sha_haOpen = na
+sha_haOpen := na(sha_haOpen[1]) ? (sha_o1 + sha_c1) / 2 : (nz(sha_haOpen[1]) + nz(sha_haClose[1])) / 2
+float sha_haHigh = math.max(sha_h1, sha_haOpen, sha_haClose)
+float sha_haLow  = math.min(sha_l1, sha_haOpen, sha_haClose)
+
+// Step 3: Post-smooth the HA candles
+sha_o2 = ta.ema(sha_haOpen, sha_len2)
+sha_h2 = ta.ema(sha_haHigh, sha_len2)
+sha_l2 = ta.ema(sha_haLow, sha_len2)
+sha_c2 = ta.ema(sha_haClose, sha_len2)
+
+sha_bull = sha_c2 >= sha_o2
+sha_bodyClr = sha_bull ? color.rgb(0, 230, 118) : color.rgb(255, 82, 82)
+sha_wickClr = sha_bull ? color.rgb(0, 180, 90) : color.rgb(200, 60, 60)
+
+plotcandle(i_showSHA ? sha_o2 : na, i_showSHA ? sha_h2 : na, i_showSHA ? sha_l2 : na, i_showSHA ? sha_c2 : na, title="Smoothed HA", color=sha_bodyClr, wickcolor=sha_wickClr, bordercolor=sha_bodyClr, force_overlay=true)
 
 plot(i_showTar ? tar1 : na, "Tar Baby", color=color.new(color.red, 40), linewidth=2, force_overlay=true)
 
