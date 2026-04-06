@@ -164,7 +164,9 @@ bullColor = volMult >= 2.0 ? c_bullMax : volMult >= 1.5 ? c_bullMid : volMult >=
 bearColor = volMult >= 2.0 ? c_bearMax : volMult >= 1.5 ? c_bearMid : volMult >= 1.0 ? c_bearAvg : c_bearMin
 volColor = isBull ? bullColor : bearColor
 
-plotcandle(i_showVolC ? open : na, i_showVolC ? high : na, i_showVolC ? low : na, i_showVolC ? close : na, title="Volume Candles", color=volColor, wickcolor=volColor, bordercolor=volColor, force_overlay=true)
+// Regular volume candles only show when HA is off (HA takes priority for overlay slot)
+showRegCandles = i_showVolC and not i_showSHA
+plotcandle(showRegCandles ? open : na, showRegCandles ? high : na, showRegCandles ? low : na, showRegCandles ? close : na, title="Volume Candles", color=volColor, wickcolor=volColor, bordercolor=volColor, force_overlay=true)
 
 // --- Smoothed Heikin Ashi Candles ---
 // Step 1: Pre-smooth OHLC with EMA
